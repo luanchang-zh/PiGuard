@@ -1,0 +1,35 @@
+# 本地 go run 的默认值。相对路径相对于本文件所在目录。
+# 非空环境变量会覆盖同名字段，Compose 用这种方式把 Broker 指到 mosquitto 服务：
+#   PIGUARD_HTTP_ADDR
+#   PIGUARD_MQTT_BROKER
+#   PIGUARD_MQTT_CLIENT_ID
+#   PIGUARD_MQTT_USERNAME
+#   PIGUARD_MQTT_PASSWORD
+#   PIGUARD_MQTT_CONNECT_TIMEOUT_SECONDS
+#   PIGUARD_DATABASE_SQLITE_PATH
+#   PIGUARD_STORAGE_SNAPSHOT_DIR
+#   PIGUARD_SEED_DEVICE_ID
+#   PIGUARD_SEED_NAME
+#   PIGUARD_SEED_MODE
+#   PIGUARD_SEED_SOFTWARE_VERSION
+http:
+  addr: 127.0.0.1:8080
+
+mqtt:
+  broker: tcp://127.0.0.1:1883
+  client_id: piguard-backend
+  username: ""
+  password: ""
+  connect_timeout_seconds: 5
+
+database:
+  sqlite_path: data/piguard.db
+
+storage:
+  snapshot_dir: data/snapshots
+
+seed:
+  device_id: car-001
+  name: Demo Car
+  mode: mock
+  software_version: 0.1.0

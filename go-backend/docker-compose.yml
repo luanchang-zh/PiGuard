@@ -1,0 +1,40 @@
+# 同时启动 Mosquitto 和 Go 平台。
+# 后端会等 Broker 健康后再起来；如果仍然连不上，进程退出，而不是空转 HTTP。
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./deploy/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "127.0.0.1", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+
+  backend:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      GIN_MODE: release
+      PIGUARD_HTTP_ADDR: 0.0.0.0:8080
+      PIGUARD_MQTT_BROKER: tcp://mosquitto:1883
+      PIGUARD_DATABASE_SQLITE_PATH: /app/data/piguard.db
+      PIGUARD_STORAGE_SNAPSHOT_DIR: /app/data/snapshots
+    volumes:
+      - backend-data:/app/data
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  backend-data:

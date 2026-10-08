@@ -1,4 +1,4 @@
-// simulator publishes a mock device's status and 2Hz telemetry for local use.
+// simulator publishes status/telemetry and acknowledges simulated device commands.
 package main
 
 import (
@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"piguard/go-backend/internal/protocol"
+	"piguard/go-backend/internal/simulator"
 	"syscall"
 	"time"
 )
@@ -20,18 +21,24 @@ func main() {
 	broker := flag.String("broker", "tcp://127.0.0.1:1883", "MQTT Broker")
 	device := flag.String("device", "car-001", "已登记设备 ID")
 	duration := flag.Duration("duration", 10*time.Second, "模拟持续时间")
+	ackMode := flag.String("ack-mode", "success", "命令回执模式: success/failed/none")
+	ackDelay := flag.Duration("ack-delay", 0, "回执延迟，用于验证迟到和超时")
 	flag.Parse()
-	if *duration <= 0 {
+	if *duration <= 0 || *ackDelay < 0 {
 		fmt.Fprintln(os.Stderr, "duration must be positive")
 		os.Exit(1)
 	}
-	if err := run(*broker, *device, *duration); err != nil {
+	if err := run(*broker, *device, *duration, *ackMode, *ackDelay); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(broker, id string, duration time.Duration) error {
+func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration) error {
+	executor, err := simulator.NewCommandExecutor(ackMode)
+	if err != nil {
+		return err
+	}
 	will := fmt.Sprintf(`{"schema_version":1,"device_id":%q,"online":false,"reason":"connection_lost"}`, id)
 	opts := paho.NewClientOptions().AddBroker(broker).SetClientID(fmt.Sprintf("mock-%s-%d", id, time.Now().UnixNano())).SetConnectTimeout(3*time.Second).SetWill("car/"+id+"/status", will, 1, true)
 	c := paho.NewClient(opts)
@@ -54,15 +61,65 @@ func run(broker, id string, duration time.Duration) error {
 		}
 		return token.Error()
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ackCtx, cancelAcks := context.WithCancel(ctx)
+	ackQueue := make(chan protocol.CommandAck, 64)
+	ackDone := make(chan struct{})
+	go func() {
+		defer close(ackDone)
+		for {
+			select {
+			case <-ackCtx.Done():
+				return
+			case ack := <-ackQueue:
+				timer := time.NewTimer(ackDelay)
+				select {
+				case <-ackCtx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+				if err := publish("command-acks", ack, 1, false); err != nil {
+					fmt.Fprintln(os.Stderr, "command Ack:", err)
+				}
+			}
+		}
+	}()
+	defer func() { stop(); cancelAcks(); <-ackDone }()
+	token = c.Subscribe("car/"+id+"/commands", 1, func(_ paho.Client, msg paho.Message) {
+		ack, executed, err := executor.Execute(msg.Topic(), msg.Payload(), time.Now().UTC())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "拒绝命令:", err)
+			return
+		}
+		if executed {
+			fmt.Printf("模拟执行命令，累计次数=%d\n", executor.Executions())
+		}
+		if ack == nil {
+			return
+		}
+		select {
+		case ackQueue <- *ack:
+		case <-ackCtx.Done():
+		default:
+			fmt.Fprintln(os.Stderr, "回执队列已满")
+		}
+	})
+	if !token.WaitTimeout(3 * time.Second) {
+		return fmt.Errorf("MQTT command subscription timeout")
+	}
+	if err := token.Error(); err != nil {
+		return err
+	}
 	status := map[string]any{"schema_version": 1, "device_id": id, "online": true, "timestamp": time.Now().UTC(), "software_version": "0.1.0", "config_version": 0, "mode": "mock", "sensors": map[string]string{"distance": "ok", "camera": "ok", "gyro": "ok", "temperature": "ok"}, "mqtt": map[string]bool{"connected": true}}
 	if err := publish("status", status, 1, true); err != nil {
 		return err
 	}
 	defer func() {
+		cancelAcks()
+		<-ackDone
 		_ = publish("status", map[string]any{"schema_version": 1, "device_id": id, "online": false, "reason": "simulator_stopped"}, 1, true)
 	}()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	ticker := time.NewTicker(500 * time.Millisecond)

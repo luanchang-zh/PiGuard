@@ -27,6 +27,20 @@ func writeOK(c *gin.Context, data any) {
 // writeError 把服务层错误变成规范里的 code 和 message。
 // 尚未实现使用 HTTP 501，避免和真正的 500 内部故障混在一起。
 func writeError(c *gin.Context, err error) {
+	for _, mapping := range []struct {
+		err          error
+		status, code int
+		message      string
+	}{
+		{apperr.ErrCommandNotFound, http.StatusNotFound, apperr.CodeCommandNotFound, "command not found"},
+		{apperr.ErrDeviceOffline, http.StatusServiceUnavailable, apperr.CodeDeviceOffline, "device offline"},
+		{apperr.ErrMQTTUnavailable, http.StatusServiceUnavailable, apperr.CodeMQTTUnavailable, "MQTT unavailable"},
+	} {
+		if errors.Is(err, mapping.err) {
+			c.JSON(mapping.status, Response{Code: mapping.code, Message: mapping.message})
+			return
+		}
+	}
 	if errors.Is(err, apperr.ErrDeviceNotFound) {
 		c.JSON(http.StatusNotFound, Response{Code: apperr.CodeDeviceNotFound, Message: "device not found"})
 		return

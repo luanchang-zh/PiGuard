@@ -648,7 +648,7 @@ Platform -> Raspberry Pi
 
   "issued_at": "2026-09-29T10:30:00Z",
 
-  "expires_at": "2026-09-29T10:30:05Z",
+  "expires_at": "2026-09-29T10:30:10Z",
 
   "params": {}
 }
@@ -657,6 +657,8 @@ Platform -> Raspberry Pi
 ---
 
 # 16. 命令类型
+
+当前 Go 控制闭环实现 `buzzer.test`、`indicator.test`、`scenario.start`、`scenario.stop`，统一由平台签发 10 秒有效期。下面的摄像头和配置约定属于后续能力；当前普通 commands API 对未支持类型返回 400/40001，配置使用独立 config Topic。
 
 第一版：
 
@@ -687,7 +689,7 @@ config.update
   "device_id": "car-001",
   "type": "buzzer.test",
   "issued_at": "2026-09-29T10:30:00Z",
-  "expires_at": "2026-09-29T10:30:05Z",
+  "expires_at": "2026-09-29T10:30:10Z",
 
   "params": {
     "duration_ms": 1000
@@ -713,7 +715,7 @@ config.update
   "type": "indicator.test",
 
   "issued_at": "2026-09-29T10:30:00Z",
-  "expires_at": "2026-09-29T10:30:05Z",
+  "expires_at": "2026-09-29T10:30:10Z",
 
   "params": {
     "color": "red",
@@ -731,6 +733,8 @@ red
 ```
 
 ---
+
+`indicator.test` 的 `duration_ms` 与蜂鸣器相同：整数，100—5000ms；color 只能是 green/yellow/red。
 
 # 19. camera.snapshot
 
@@ -992,6 +996,14 @@ MQTT publish 成功
 ```
 
 ---
+
+当前 Go 平台的状态补充规则：
+
+- HTTP 202/pending 表示命令已保存并异步受理，发布成功才进入 sent，合法设备回执才决定 success/failed。
+- 明确无法提交的发送错误写 failed/MQTT_UNAVAILABLE；发布结果不确定则等待回执或截止，不据此声称设备未执行。
+- 平台以收到有效回执的时间和 expires_at 比较；相等或晚于截止为 timeout。timeout 表示未及时确认。
+- 快速 Ack 可从 pending 直接进入终态，后续发布回调不能覆盖回 sent。重复/冲突/迟到 Ack 不改终态、不重复推送。
+- 平台重启恢复未结束命令的截止时间，不自动重发动作命令。每次有效 POST 是新命令，本版没有 HTTP 幂等键。
 
 # 26. 命令错误码
 
@@ -1359,6 +1371,8 @@ Response：
 
 通用下行命令 API。
 
+成功受理返回 HTTP **202 Accepted**，data.status 固定为 pending。平台先落库再异步下发；查询时可能已经进入 sent 或终态。请求只允许 type/params，拒绝额外字段、缺失或非法参数和尾随 JSON。设备不存在为 404/40401，离线为 503/50301，发布通道不可用为 503/50302；前置拒绝不生成记录。
+
 Request：
 
 ```json
@@ -1444,16 +1458,24 @@ Response：
 
     "issued_at": "2026-09-29T10:30:00Z",
 
+    "expires_at": "2026-09-29T10:30:10Z",
+
     "ack_at": "2026-09-29T10:30:01Z",
+
+    "executed_at": "2026-09-29T10:30:01Z",
 
     "result": {
       "message": "buzzer test completed"
-    }
+    },
+
+    "error": null
   }
 }
 ```
 
 ---
+
+命令查询还包含 params。ack_at 为平台收到回执的时间，executed_at 为设备报告的执行时间；未收到回执时两者为 null。result/error 无值为 null；不存在的命令返回 404/40402。WS command_update 的 data 与命令查询 DTO 相同。
 
 # 41. 图片上传 API
 
@@ -2324,6 +2346,7 @@ status
 issued_at
 expires_at
 ack_at
+executed_at
 result
 error
 ```

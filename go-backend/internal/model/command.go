@@ -13,10 +13,11 @@ type Command struct {
 	// Params 是命令参数的 JSON 原文。
 	Params string `gorm:"type:text"`
 	// Status 取值：pending、sent、success、failed、timeout。
-	Status    string    `gorm:"size:16;index;not null"`
-	IssuedAt  time.Time `gorm:"not null"`
-	ExpiresAt time.Time `gorm:"not null"`
-	AckAt     *time.Time
+	Status     string    `gorm:"size:16;index;not null"`
+	IssuedAt   time.Time `gorm:"not null"`
+	ExpiresAt  time.Time `gorm:"not null"`
+	AckAt      *time.Time
+	ExecutedAt *time.Time
 	// Result 保存设备回执里的结果 JSON，例如拍照返回的 snapshot_id。
 	Result string `gorm:"type:text"`
 	Error  string `gorm:"type:text"`

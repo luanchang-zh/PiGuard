@@ -6,26 +6,28 @@ import (
 	paho "github.com/eclipse/paho.mqtt.golang"
 	"log/slog"
 	"piguard/go-backend/internal/service"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-var uplinkFilters = map[string]byte{"car/+/telemetry": 0, "car/+/status": 1}
+var uplinkFilters = map[string]byte{"car/+/telemetry": 0, "car/+/status": 1, "car/+/command-acks": 1}
 
 // Subscriber is configured before Connect; Start verifies the first subscription.
 type Subscriber struct {
-	client  *Client
-	monitor *service.Monitor
-	ctx     context.Context
-	cancel  context.CancelFunc
-	started atomic.Bool
-	mu      sync.Mutex
+	client   *Client
+	monitor  *service.Monitor
+	commands *service.CommandManager
+	ctx      context.Context
+	cancel   context.CancelFunc
+	started  atomic.Bool
+	mu       sync.Mutex
 }
 
-func NewSubscriber(client *Client, monitor *service.Monitor) *Subscriber {
+func NewSubscriber(client *Client, monitor *service.Monitor, commands *service.CommandManager) *Subscriber {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Subscriber{client: client, monitor: monitor, ctx: ctx, cancel: cancel}
+	s := &Subscriber{client: client, monitor: monitor, commands: commands, ctx: ctx, cancel: cancel}
 	client.opts.SetOnConnectHandler(func(raw paho.Client) {
 		if !s.started.Load() {
 			return
@@ -77,6 +79,12 @@ func (s *Subscriber) subscribe(raw paho.Client) error {
 	token := raw.SubscribeMultiple(uplinkFilters, func(_ paho.Client, msg paho.Message) {
 		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 		defer cancel()
+		if strings.HasSuffix(msg.Topic(), "/command-acks") {
+			if err := s.commands.IngestAck(ctx, msg.Topic(), msg.Payload()); err != nil {
+				slog.Warn("拒绝命令回执", "topic", msg.Topic(), "err", err)
+			}
+			return
+		}
 		s.monitor.LogIngest(ctx, msg.Topic(), msg.Payload())
 	})
 	if !token.WaitTimeout(s.client.timeout) {

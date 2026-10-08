@@ -54,7 +54,8 @@ seed:
 
 	t.Setenv("PIGUARD_HTTP_ADDR", "0.0.0.0:9090")
 	t.Setenv("PIGUARD_MQTT_BROKER", "tcp://mosquitto:1883")
-	t.Setenv("PIGUARD_DATABASE_SQLITE_PATH", "/var/lib/piguard/piguard.db")
+	absoluteDBPath := filepath.Join(t.TempDir(), "piguard.db")
+	t.Setenv("PIGUARD_DATABASE_SQLITE_PATH", absoluteDBPath)
 
 	cfg, err := Load(path)
 	if err != nil {
@@ -66,7 +67,7 @@ seed:
 	if cfg.MQTT.Broker != "tcp://mosquitto:1883" {
 		t.Fatalf("Broker 地址没有被环境变量覆盖，得到 %s", cfg.MQTT.Broker)
 	}
-	if cfg.Database.SQLitePath != "/var/lib/piguard/piguard.db" {
+	if cfg.Database.SQLitePath != absoluteDBPath {
 		t.Fatalf("绝对路径应保持原样，得到 %s", cfg.Database.SQLitePath)
 	}
 	if cfg.Storage.SnapshotDir != filepath.Join(dir, "data", "snapshots") {

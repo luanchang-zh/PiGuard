@@ -79,14 +79,19 @@ func Run(cfg *config.Config) error {
 		Password:       cfg.MQTT.Password,
 		ConnectTimeout: cfg.MQTT.ConnectTimeout,
 	})
-	subscriber := mqtt.NewSubscriber(mqttClient, monitor)
+	publisher := mqtt.NewPublisher(mqttClient)
+	commandSvc := service.NewCommandService(repo.NewCommandRepository(gormDB), deviceRepo, publisher, monitor.Online, hub)
+	subscriber := mqtt.NewSubscriber(mqttClient, monitor, commandSvc)
 	defer subscriber.Close()
 	if err := mqttClient.Connect(); err != nil {
 		return err
 	}
 	defer mqttClient.Disconnect()
 
-	publisher := mqtt.NewPublisher(mqttClient)
+	if err := commandSvc.Start(context.Background()); err != nil {
+		return fmt.Errorf("恢复命令状态: %w", err)
+	}
+	defer commandSvc.Close()
 	if err := subscriber.Start(); err != nil {
 		return err
 	}
@@ -96,7 +101,7 @@ func Run(cfg *config.Config) error {
 		Devices:   deviceSvc,
 		Telemetry: service.NewTelemetryService(historyRepo, deviceRepo),
 		Events:    service.NewEventService(repo.NewEventRepository(gormDB)),
-		Commands:  service.NewCommandService(repo.NewCommandRepository(gormDB), publisher),
+		Commands:  commandSvc,
 		Configs:   service.NewConfigService(configRepo, publisher),
 		Frames:    service.NewFrameService(repo.NewSnapshotRepository(gormDB), cfg.Storage.SnapshotDir),
 		Hub:       hub,

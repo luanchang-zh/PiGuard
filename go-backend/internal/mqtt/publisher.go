@@ -3,12 +3,13 @@ package mqtt
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"piguard/go-backend/internal/apperr"
 )
 
 // Publisher 负责把命令和配置发到 Broker。
-// 下行主题是 car/{device_id}/commands 和 car/{device_id}/config，发送逻辑尚未实现。
+// 发布后不能确定交付结果的错误单独返回，不能声称设备没有执行。
 type Publisher struct {
 	client *Client
 }
@@ -17,11 +18,26 @@ func NewPublisher(client *Client) *Publisher {
 	return &Publisher{client: client}
 }
 
-// Publish 在命令和配置接口接通后才会真正发送。
-// QoS 和 retained 由调用方按规范传入：命令 QoS 1 不保留，配置 QoS 1 且保留。
-func (p *Publisher) Publish(context.Context, string, byte, bool, []byte) error {
-	if p.client == nil || p.client.Raw() == nil {
-		return fmt.Errorf("MQTT 客户端未连接")
+func (p *Publisher) Available() bool {
+	return p.client != nil && p.client.Raw() != nil && p.client.Raw().IsConnectionOpen()
+}
+func (p *Publisher) Publish(ctx context.Context, topic string, qos byte, retained bool, payload []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	return apperr.ErrNotImplemented
+	if !p.Available() {
+		return apperr.ErrMQTTUnavailable
+	}
+	token := p.client.Raw().Publish(topic, qos, retained, payload)
+	waitCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	select {
+	case <-token.Done():
+		if err := token.Error(); err != nil {
+			return fmt.Errorf("%w: %v", apperr.ErrPublishUncertain, err)
+		}
+		return nil
+	case <-waitCtx.Done():
+		return fmt.Errorf("%w: %v", apperr.ErrPublishUncertain, waitCtx.Err())
+	}
 }

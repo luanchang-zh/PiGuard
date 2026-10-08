@@ -32,6 +32,13 @@ var ErrNotImplemented = errors.New("not implemented")
 
 var ErrDeviceNotFound = errors.New("device not found")
 
-type InvalidParams struct { Field string }
+var ErrCommandNotFound = errors.New("command not found")
+var ErrDeviceOffline = errors.New("device offline")
+var ErrMQTTUnavailable = errors.New("MQTT unavailable")
+
+// ErrPublishUncertain means that the message may already have reached the device.
+var ErrPublishUncertain = errors.New("MQTT delivery uncertain")
+
+type InvalidParams struct{ Field string }
 
 func (e *InvalidParams) Error() string { return "invalid parameter: " + e.Field }

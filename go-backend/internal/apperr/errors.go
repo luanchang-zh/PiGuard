@@ -29,3 +29,9 @@ const (
 // ErrNotImplemented 表示这条调用链已经接通，但业务还没写。
 // handler 把它转换成 HTTP 501，避免调用方误以为请求已经生效。
 var ErrNotImplemented = errors.New("not implemented")
+
+var ErrDeviceNotFound = errors.New("device not found")
+
+type InvalidParams struct { Field string }
+
+func (e *InvalidParams) Error() string { return "invalid parameter: " + e.Field }

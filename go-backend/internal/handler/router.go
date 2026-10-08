@@ -3,13 +3,14 @@ package handler
 import (
 	"context"
 
+	"piguard/go-backend/internal/realtime"
 	"piguard/go-backend/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Dependencies 是 HTTP 层需要的依赖。由启动流程创建具体实现后注入。
-// Ping 用于健康检查；其余接口目前都会返回“尚未实现”。
+// Ping 用于健康检查；监控业务共用一个实时 Hub。
 type Dependencies struct {
 	Ping      func(context.Context) error
 	Devices   service.DeviceService
@@ -18,10 +19,11 @@ type Dependencies struct {
 	Commands  service.CommandService
 	Configs   service.ConfigService
 	Frames    service.FrameService
+	Hub       *realtime.Hub
 }
 
 // NewEngine 注册健康检查和规范中的 /api/v1 路由。
-// 业务路由已经挂上，调用时返回 HTTP 501，方便前后端先对齐路径。
+// 控制、配置、事件和图片接口仍保留占位行为。
 func NewEngine(dep Dependencies) *gin.Engine {
 	engine := gin.New()
 	engine.Use(gin.Logger(), gin.Recovery())
@@ -33,7 +35,7 @@ func NewEngine(dep Dependencies) *gin.Engine {
 	commands := NewCommandHandler(dep.Commands)
 	configs := NewConfigHandler(dep.Configs)
 	frames := NewFrameHandler(dep.Frames)
-	ws := NewWebsocketHandler()
+	ws := NewWebsocketHandler(dep.Hub)
 
 	v1 := engine.Group("/api/v1")
 	v1.GET("/ws", ws.Serve)

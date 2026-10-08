@@ -1,5 +1,5 @@
 // Package mqtt 维持和 Mosquitto 的连接。
-// 启动时必须连上，否则进程退出。上行订阅和命令发布的业务处理后续再接到这个连接上。
+// 启动时必须连上，否则进程退出；Subscriber 负责订阅与重连恢复。
 package mqtt
 
 import (
@@ -39,7 +39,7 @@ func NewClient(opts Options) *Client {
 		SetClientID(opts.ClientID).
 		SetAutoReconnect(true).
 		SetConnectRetry(false).
-		SetOrderMatters(false).
+		SetOrderMatters(true).
 		SetKeepAlive(30 * time.Second).
 		SetConnectionLostHandler(func(_ paho.Client, err error) {
 			slog.Warn("MQTT 连接已断开，客户端将尝试重连", "err", err)
@@ -54,6 +54,7 @@ func NewClient(opts Options) *Client {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
+	pahoOpts.SetConnectTimeout(timeout)
 	return &Client{broker: opts.Broker, timeout: timeout, opts: pahoOpts}
 }
 

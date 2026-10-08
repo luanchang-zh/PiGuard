@@ -17,6 +17,7 @@ import (
 	"piguard/go-backend/internal/db"
 	"piguard/go-backend/internal/handler"
 	"piguard/go-backend/internal/mqtt"
+	"piguard/go-backend/internal/realtime"
 	"piguard/go-backend/internal/repo"
 	"piguard/go-backend/internal/service"
 )
@@ -44,7 +45,11 @@ func Run(cfg *config.Config) error {
 
 	deviceRepo := repo.NewDeviceRepository(gormDB)
 	configRepo := repo.NewConfigRepository(gormDB)
-	deviceSvc := service.NewDeviceService(deviceRepo, configRepo)
+	historyRepo := repo.NewTelemetryRepository(gormDB)
+	hub := realtime.NewHub(32)
+	defer hub.Close()
+	monitor := service.NewMonitor(deviceRepo, historyRepo, hub)
+	deviceSvc := service.NewDeviceService(deviceRepo, configRepo, monitor)
 	seedResult, err := deviceSvc.Seed(context.Background(), service.SeedInput{
 		DeviceID:        cfg.Seed.DeviceID,
 		Name:            cfg.Seed.Name,
@@ -59,6 +64,13 @@ func Run(cfg *config.Config) error {
 		"device_created", seedResult.DeviceCreated,
 		"config_created", seedResult.ConfigCreated,
 	)
+	if err := monitor.Disconnected(context.Background()); err != nil {
+		return fmt.Errorf("初始化在线状态: %w", err)
+	}
+	monitorCtx, stopMonitor := context.WithCancel(context.Background())
+	monitorDone := make(chan struct{})
+	go func() { defer close(monitorDone); monitor.Run(monitorCtx) }()
+	defer func() { stopMonitor(); <-monitorDone }()
 
 	mqttClient := mqtt.NewClient(mqtt.Options{
 		Broker:         cfg.MQTT.Broker,
@@ -67,13 +79,14 @@ func Run(cfg *config.Config) error {
 		Password:       cfg.MQTT.Password,
 		ConnectTimeout: cfg.MQTT.ConnectTimeout,
 	})
+	subscriber := mqtt.NewSubscriber(mqttClient, monitor)
+	defer subscriber.Close()
 	if err := mqttClient.Connect(); err != nil {
 		return err
 	}
 	defer mqttClient.Disconnect()
 
 	publisher := mqtt.NewPublisher(mqttClient)
-	subscriber := mqtt.NewSubscriber(mqttClient)
 	if err := subscriber.Start(); err != nil {
 		return err
 	}
@@ -81,11 +94,12 @@ func Run(cfg *config.Config) error {
 	engine := handler.NewEngine(handler.Dependencies{
 		Ping:      sqlDB.PingContext,
 		Devices:   deviceSvc,
-		Telemetry: service.NewTelemetryService(repo.NewTelemetryRepository(gormDB)),
+		Telemetry: service.NewTelemetryService(historyRepo, deviceRepo),
 		Events:    service.NewEventService(repo.NewEventRepository(gormDB)),
 		Commands:  service.NewCommandService(repo.NewCommandRepository(gormDB), publisher),
 		Configs:   service.NewConfigService(configRepo, publisher),
 		Frames:    service.NewFrameService(repo.NewSnapshotRepository(gormDB), cfg.Storage.SnapshotDir),
+		Hub:       hub,
 	})
 
 	httpServer := &http.Server{
@@ -101,6 +115,7 @@ func Run(cfg *config.Config) error {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 
 	select {
 	case err := <-errCh:
@@ -115,6 +130,7 @@ func Run(cfg *config.Config) error {
 	// 先停接收新请求，再由 defer 断开 MQTT、关闭数据库。
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	hub.Close()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("关闭 HTTP 服务: %w", err)
 	}

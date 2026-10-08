@@ -18,6 +18,8 @@ type Device struct {
 	// 平台希望设备使用的版本放在 device_configs.desired_version，两张表分开记。
 	ReportedConfigVersion int `gorm:"not null;default:0"`
 	LastSeenAt            *time.Time
+	SensorsJSON           string `gorm:"type:text"`
+	StatusJSON            string `gorm:"type:text"`
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }

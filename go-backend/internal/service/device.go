@@ -8,6 +8,7 @@ import (
 
 	"piguard/go-backend/internal/apperr"
 	"piguard/go-backend/internal/model"
+	"piguard/go-backend/internal/protocol"
 	"piguard/go-backend/internal/repo"
 )
 
@@ -26,21 +27,25 @@ type SeedResult struct {
 }
 
 // DeviceService 负责设备登记，以及网页上的设备查询。
-// List、Get、State 目前返回尚未实现，种子数据不会从这些接口漏出去。
 type DeviceService interface {
 	Seed(ctx context.Context, in SeedInput) (SeedResult, error)
 	List(ctx context.Context) ([]model.Device, error)
 	Get(ctx context.Context, deviceID string) (*model.Device, error)
-	State(ctx context.Context, deviceID string) error
+	State(ctx context.Context, deviceID string) (protocol.State, error)
 }
 
 type deviceService struct {
 	devices repo.DeviceRepository
 	configs repo.ConfigRepository
+	monitor *Monitor
 }
 
-func NewDeviceService(devices repo.DeviceRepository, configs repo.ConfigRepository) DeviceService {
-	return &deviceService{devices: devices, configs: configs}
+func NewDeviceService(devices repo.DeviceRepository, configs repo.ConfigRepository, monitors ...*Monitor) DeviceService {
+	s := &deviceService{devices: devices, configs: configs}
+	if len(monitors) > 0 {
+		s.monitor = monitors[0]
+	}
+	return s
 }
 
 // Seed 保证演示设备和默认阈值各有一行。
@@ -93,21 +98,29 @@ func (s *deviceService) Seed(ctx context.Context, in SeedInput) (SeedResult, err
 }
 
 func (s *deviceService) List(ctx context.Context) ([]model.Device, error) {
-	return s.devices.List(ctx)
+	items, err := s.devices.List(ctx)
+	if s.monitor != nil {
+		for i := range items {
+			items[i].Online = s.monitor.Online(items[i].DeviceID)
+		}
+	}
+	return items, err
 }
 
-// Get 暂不调用仓储的 Find。Find 目前只服务于启动种子。
-func (s *deviceService) Get(context.Context, string) (*model.Device, error) {
-	if s.devices == nil {
-		return nil, fmt.Errorf("设备仓储未注入")
+func (s *deviceService) Get(ctx context.Context, id string) (*model.Device, error) {
+	d, err := s.devices.Find(ctx, id)
+	if errors.Is(err, repo.ErrNotFound) {
+		return nil, apperr.ErrDeviceNotFound
 	}
-	return nil, apperr.ErrNotImplemented
+	if d != nil && s.monitor != nil {
+		d.Online = s.monitor.Online(id)
+	}
+	return d, err
 }
 
-// State 应返回车速、距离、温度、角速度、车道和风险等级。数据来自最新遥测，尚未接入。
-func (s *deviceService) State(context.Context, string) error {
-	if s.devices == nil {
-		return fmt.Errorf("设备仓储未注入")
+func (s *deviceService) State(ctx context.Context, id string) (protocol.State, error) {
+	if s.monitor == nil {
+		return protocol.State{}, apperr.ErrNotImplemented
 	}
-	return apperr.ErrNotImplemented
+	return s.monitor.State(ctx, id)
 }

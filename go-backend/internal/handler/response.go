@@ -27,6 +27,15 @@ func writeOK(c *gin.Context, data any) {
 // writeError 把服务层错误变成规范里的 code 和 message。
 // 尚未实现使用 HTTP 501，避免和真正的 500 内部故障混在一起。
 func writeError(c *gin.Context, err error) {
+	if errors.Is(err, apperr.ErrDeviceNotFound) {
+		c.JSON(http.StatusNotFound, Response{Code: apperr.CodeDeviceNotFound, Message: "device not found"})
+		return
+	}
+	var invalid *apperr.InvalidParams
+	if errors.As(err, &invalid) {
+		c.JSON(http.StatusBadRequest, Response{Code: apperr.CodeInvalidParams, Message: "invalid parameter", Error: gin.H{"field": invalid.Field}})
+		return
+	}
 	if errors.Is(err, apperr.ErrNotImplemented) {
 		c.JSON(http.StatusNotImplemented, Response{
 			Code:    apperr.CodeInternal,

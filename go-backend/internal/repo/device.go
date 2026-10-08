@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 
-	"piguard/go-backend/internal/apperr"
 	"piguard/go-backend/internal/model"
 
 	"gorm.io/gorm"
 )
 
 // DeviceRepository 读写 devices 表。
-// Find 和 Insert 给启动种子用。List 留给设备列表接口，当前固定返回尚未实现。
 type DeviceRepository interface {
 	Find(ctx context.Context, deviceID string) (*model.Device, error)
 	Insert(ctx context.Context, device *model.Device) error
 	List(ctx context.Context) ([]model.Device, error)
+	Update(ctx context.Context, deviceID string, fields map[string]any) error
+	MarkAllOffline(ctx context.Context) error
 }
 
 type deviceRepo struct {
@@ -42,7 +42,16 @@ func (r *deviceRepo) Insert(ctx context.Context, device *model.Device) error {
 	return r.db.WithContext(ctx).Create(device).Error
 }
 
-// List 先不查询全表。设备列表接口接通后再从这里返回数据。
-func (r *deviceRepo) List(context.Context) ([]model.Device, error) {
-	return nil, apperr.ErrNotImplemented
+func (r *deviceRepo) List(ctx context.Context) ([]model.Device, error) {
+	devices := []model.Device{}
+	err := r.db.WithContext(ctx).Order("device_id ASC").Find(&devices).Error
+	return devices, err
+}
+
+func (r *deviceRepo) Update(ctx context.Context, deviceID string, fields map[string]any) error {
+	return r.db.WithContext(ctx).Model(&model.Device{}).Where("device_id = ?", deviceID).Updates(fields).Error
+}
+
+func (r *deviceRepo) MarkAllOffline(ctx context.Context) error {
+	return r.db.WithContext(ctx).Model(&model.Device{}).Where("online = ?", true).Update("online", false).Error
 }

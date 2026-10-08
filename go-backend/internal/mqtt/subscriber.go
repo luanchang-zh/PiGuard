@@ -1,34 +1,92 @@
 package mqtt
 
 import (
+	"context"
 	"fmt"
+	paho "github.com/eclipse/paho.mqtt.golang"
 	"log/slog"
+	"piguard/go-backend/internal/service"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
-// uplinkFilters 是平台稍后要订阅的上行主题。加号匹配任意一台设备。
-// 现在不订阅：遥测大约每秒两条，没有入库处理时订了只会空转。
-var uplinkFilters = []string{
-	"car/+/telemetry",
-	"car/+/events",
-	"car/+/status",
-	"car/+/command-acks",
-	"car/+/config-acks",
-}
+var uplinkFilters = map[string]byte{"car/+/telemetry": 0, "car/+/status": 1}
 
-// Subscriber 预留给遥测、告警、状态和回执的回调。
+// Subscriber is configured before Connect; Start verifies the first subscription.
 type Subscriber struct {
-	client *Client
+	client  *Client
+	monitor *service.Monitor
+	ctx     context.Context
+	cancel  context.CancelFunc
+	started atomic.Bool
+	mu      sync.Mutex
 }
 
-func NewSubscriber(client *Client) *Subscriber {
-	return &Subscriber{client: client}
+func NewSubscriber(client *Client, monitor *service.Monitor) *Subscriber {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Subscriber{client: client, monitor: monitor, ctx: ctx, cancel: cancel}
+	client.opts.SetOnConnectHandler(func(raw paho.Client) {
+		if !s.started.Load() {
+			return
+		}
+		go func() {
+			for s.ctx.Err() == nil && raw.IsConnectionOpen() {
+				if err := s.subscribe(raw); err == nil {
+					return
+				} else {
+					slog.Warn("恢复 MQTT 订阅失败", "err", err)
+				}
+				select {
+				case <-s.ctx.Done():
+					return
+				case <-time.After(time.Second):
+				}
+			}
+		}()
+	})
+	client.opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
+		slog.Warn("MQTT 连接已断开，等待重连", "err", err)
+		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+		defer cancel()
+		if err := monitor.Disconnected(ctx); err != nil {
+			slog.Error("标记设备离线失败", "err", err)
+		}
+	})
+	return s
 }
 
-// Start 确认客户端已经连上，并记录计划订阅的主题。当前不向 Broker 注册这些主题。
 func (s *Subscriber) Start() error {
 	if s.client == nil || s.client.Raw() == nil {
 		return fmt.Errorf("MQTT 客户端未连接")
 	}
-	slog.Info("MQTT 已连接，上行订阅尚未注册", "topics", uplinkFilters)
+	s.started.Store(true)
+	if err := s.subscribe(s.client.Raw()); err != nil {
+		s.started.Store(false)
+		return err
+	}
 	return nil
 }
+
+func (s *Subscriber) subscribe(raw paho.Client) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ctx.Err() != nil {
+		return s.ctx.Err()
+	}
+	token := raw.SubscribeMultiple(uplinkFilters, func(_ paho.Client, msg paho.Message) {
+		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+		defer cancel()
+		s.monitor.LogIngest(ctx, msg.Topic(), msg.Payload())
+	})
+	if !token.WaitTimeout(s.client.timeout) {
+		return fmt.Errorf("MQTT 订阅超时")
+	}
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("MQTT 订阅: %w", err)
+	}
+	slog.Info("MQTT 上行订阅已就绪", "topics", uplinkFilters)
+	return nil
+}
+
+func (s *Subscriber) Close() { s.started.Store(false); s.cancel() }

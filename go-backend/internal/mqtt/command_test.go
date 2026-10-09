@@ -112,7 +112,7 @@ func TestSubscriberRestoresAckTopicOnReconnect(t *testing.T) {
 		t.Helper()
 		select {
 		case topics := <-raw.subscriptions:
-			if len(topics) != 4 || topics["car/+/command-acks"] != 1 || topics["car/+/status"] != 1 || topics["car/+/telemetry"] != 0 || topics["car/+/events"] != 1 {
+			if len(topics) != 5 || topics["car/+/config-acks"] != 1 || topics["car/+/command-acks"] != 1 || topics["car/+/status"] != 1 || topics["car/+/telemetry"] != 0 || topics["car/+/events"] != 1 {
 				t.Fatal(topics)
 			}
 		case <-time.After(time.Second):
@@ -177,5 +177,61 @@ func TestSubscriberRoutesEventsWithoutBlockingAckRecovery(t *testing.T) {
 	raw.handler(nil, testMessage{topic: "car/car-001/events", payload: []byte(`{}`)})
 	if events.n.Load() != 1 {
 		t.Fatal(events.n.Load())
+	}
+}
+
+type countingConfigSync struct {
+	acks     atomic.Int32
+	restored chan struct{}
+	raw      *testClient
+}
+
+func (c *countingConfigSync) IngestAck(context.Context, string, []byte) error {
+	c.acks.Add(1)
+	return nil
+}
+func (c *countingConfigSync) Restore(context.Context) error {
+	if c.raw.handler == nil {
+		return errors.New("restore preceded subscription")
+	}
+	c.restored <- struct{}{}
+	return nil
+}
+func TestSubscriberConfigAckRoutingAndRestoreAfterSubscription(t *testing.T) {
+	raw := &testClient{token: completedToken(nil), subscriptions: make(chan map[string]byte, 4)}
+	raw.open.Store(true)
+	client := NewClient(Options{Broker: "tcp://127.0.0.1:1883", ClientID: "config", ConnectTimeout: time.Second})
+	client.raw = raw
+	configs := &countingConfigSync{raw: raw, restored: make(chan struct{}, 4)}
+	s := NewSubscriber(client, nil, nil, nil, configs)
+	defer s.Close()
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-configs.restored
+	topics := <-raw.subscriptions
+	if len(topics) != 5 || topics["car/+/config-acks"] != 1 {
+		t.Fatal(topics)
+	}
+	raw.handler(nil, testMessage{topic: "car/car-001/config-acks", payload: []byte(`{}`)})
+	if configs.acks.Load() != 1 {
+		t.Fatal("config Ack not routed")
+	}
+	client.opts.OnConnect(raw)
+	select {
+	case <-configs.restored:
+	case <-time.After(time.Second):
+		t.Fatal("reconnect did not restore configs")
+	}
+	topics = <-raw.subscriptions
+	if len(topics) != 5 {
+		t.Fatal(topics)
+	}
+	s.Close()
+	client.opts.OnConnect(raw)
+	select {
+	case <-configs.restored:
+		t.Fatal("closed subscriber restored configuration")
+	default:
 	}
 }

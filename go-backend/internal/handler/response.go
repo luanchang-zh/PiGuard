@@ -32,6 +32,7 @@ func writeError(c *gin.Context, err error) {
 		status, code int
 		message      string
 	}{
+		{apperr.ErrConfigVersionConflict, http.StatusConflict, apperr.CodeConfigVersionConflict, "config version conflict"},
 		{apperr.ErrCommandNotFound, http.StatusNotFound, apperr.CodeCommandNotFound, "command not found"},
 		{apperr.ErrDeviceOffline, http.StatusServiceUnavailable, apperr.CodeDeviceOffline, "device offline"},
 		{apperr.ErrMQTTUnavailable, http.StatusServiceUnavailable, apperr.CodeMQTTUnavailable, "MQTT unavailable"},

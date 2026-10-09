@@ -82,7 +82,8 @@ func Run(cfg *config.Config) error {
 	publisher := mqtt.NewPublisher(mqttClient)
 	commandSvc := service.NewCommandService(repo.NewCommandRepository(gormDB), deviceRepo, publisher, monitor.Online, hub)
 	eventSvc := service.NewEventService(repo.NewEventRepository(gormDB), deviceRepo, hub)
-	subscriber := mqtt.NewSubscriber(mqttClient, monitor, commandSvc, eventSvc)
+	configSvc := service.NewConfigService(configRepo, publisher, deviceRepo)
+	subscriber := mqtt.NewSubscriber(mqttClient, monitor, commandSvc, eventSvc, configSvc)
 	defer subscriber.Close()
 	if err := mqttClient.Connect(); err != nil {
 		return err
@@ -93,6 +94,10 @@ func Run(cfg *config.Config) error {
 		return fmt.Errorf("恢复命令状态: %w", err)
 	}
 	defer commandSvc.Close()
+	if err := configSvc.Start(context.Background()); err != nil {
+		return fmt.Errorf("恢复配置状态: %w", err)
+	}
+	defer configSvc.Close()
 	if err := subscriber.Start(); err != nil {
 		return err
 	}
@@ -103,7 +108,7 @@ func Run(cfg *config.Config) error {
 		Telemetry: service.NewTelemetryService(historyRepo, deviceRepo),
 		Events:    eventSvc,
 		Commands:  commandSvc,
-		Configs:   service.NewConfigService(configRepo, publisher),
+		Configs:   configSvc,
 		Frames:    service.NewFrameService(repo.NewSnapshotRepository(gormDB), cfg.Storage.SnapshotDir),
 		Hub:       hub,
 	})

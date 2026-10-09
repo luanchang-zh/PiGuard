@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Open 创建数据库文件（含父目录），建好六张业务表，并限制为单连接。
+// Open 创建数据库文件（含父目录），迁移业务表，并限制为单连接。
 // SQLite 同时只适合一个写连接，多连接并发写容易出现 database is locked。
 func Open(path string) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -45,6 +45,7 @@ func Open(path string) (*gorm.DB, error) {
 	if err := db.AutoMigrate(
 		&model.Device{},
 		&model.DeviceConfig{},
+		&model.ConfigRevision{},
 		&model.Telemetry{},
 		&model.Event{},
 		&model.Command{},

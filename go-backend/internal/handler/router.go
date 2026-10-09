@@ -23,7 +23,7 @@ type Dependencies struct {
 }
 
 // NewEngine 注册健康检查和规范中的 /api/v1 路由。
-// 配置和图片接口仍保留占位行为。
+// 图片接口仍保留占位行为。
 func NewEngine(dep Dependencies) *gin.Engine {
 	engine := gin.New()
 	engine.Use(gin.Logger(), gin.Recovery())

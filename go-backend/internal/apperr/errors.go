@@ -35,6 +35,7 @@ var ErrDeviceNotFound = errors.New("device not found")
 var ErrCommandNotFound = errors.New("command not found")
 var ErrDeviceOffline = errors.New("device offline")
 var ErrMQTTUnavailable = errors.New("MQTT unavailable")
+var ErrConfigVersionConflict = errors.New("config version conflict")
 
 // ErrPublishUncertain means that the message may already have reached the device.
 var ErrPublishUncertain = errors.New("MQTT delivery uncertain")

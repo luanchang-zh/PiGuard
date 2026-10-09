@@ -16,6 +16,21 @@ type DeviceConfig struct {
 
 func (DeviceConfig) TableName() string { return "device_configs" }
 
+// ConfigRevision keeps immutable issued rules and the first valid device result.
+type ConfigRevision struct {
+	ID            uint      `gorm:"primaryKey"`
+	DeviceID      string    `gorm:"size:64;uniqueIndex:config_device_version;not null"`
+	ConfigVersion int       `gorm:"uniqueIndex:config_device_version;not null"`
+	ConfigJSON    string    `gorm:"type:text;not null"`
+	IssuedAt      time.Time `gorm:"not null"`
+	Status        string    `gorm:"size:16;not null"`
+	AckAt         *time.Time
+	AppliedAt     *time.Time
+	ErrorJSON     string `gorm:"type:text"`
+}
+
+func (ConfigRevision) TableName() string { return "config_revisions" }
+
 // RulesConfig 是配置文档的根。网页修改阈值时提交其中的 rules 对象。
 type RulesConfig struct {
 	Rules RuleSet `json:"rules"`

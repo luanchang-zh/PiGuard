@@ -1278,92 +1278,77 @@ GET /api/v1/devices/car-001/events?type=obstacle_warning&limit=20
 
 # 35. GET /api/v1/devices/{device_id}/config
 
-Response：
+返回完整期望规则和当前期望版本的同步结果，HTTP 200/code 0。未知设备为 404/40401。
 
 ```json
 {
   "code": 0,
-
+  "message": "ok",
   "data": {
     "desired_version": 6,
     "reported_version": 6,
-
     "rules": {
-      "obstacle": {
-        "warning_distance_m": 20,
-        "danger_distance_m": 8
-      },
-
-      "temperature": {
-        "trigger_c": 35,
-        "recover_c": 33,
-        "duration_ms": 5000
-      }
-    }
+      "obstacle": {"warning_distance_m": 20, "danger_distance_m": 8},
+      "lane_departure": {"offset_threshold": 0.35, "duration_ms": 1000},
+      "sharp_turn": {"yaw_threshold_deg_s": 30, "min_speed_kmh": 20, "duration_ms": 300},
+      "temperature": {"trigger_c": 35, "recover_c": 33, "duration_ms": 5000}
+    },
+    "status": "success",
+    "ack_at": "2026-09-29T10:30:01.100Z",
+    "applied_at": "2026-09-29T10:30:01Z",
+    "error": null
   }
 }
 ```
+
+- desired_version 表示平台期望版本；reported_version 只由合法成功 config-ack 单调前进。设备 API 的 config_version 仍来自 status 报告，不能代替配置 Ack。
+- status 为当前 desired_version 的 pending/success/failed。旧版本成功不把最新版本标为 success；失败保留上一成功版本。
+- ack_at 是平台接收首个有效回执的 UTC 时间；applied_at 只有 success 时有值，error 只有 failed 时有值。其余情况返回 null。
+- 初始种子 desired_version=1、reported_version=0，未收到成功回执时不得宣称生效。配置可长期 pending，不采用动作命令的 10 秒截止。
 
 ---
 
 # 36. PUT /api/v1/devices/{device_id}/config
 
-Request：
+提交刚读取的 desired_version 作为 expected_version。支持部分规则字段，未提交字段保留原值；合并后严格校验完整配置。
 
 ```json
 {
-  "rules": {
-    "obstacle": {
-      "warning_distance_m": 20,
-      "danger_distance_m": 8
-    },
-
-    "temperature": {
-      "trigger_c": 35,
-      "recover_c": 33,
-      "duration_ms": 5000
-    },
-
-    "sharp_turn": {
-      "yaw_threshold_deg_s": 30,
-      "min_speed_kmh": 20,
-      "duration_ms": 300
-    },
-
-    "lane_departure": {
-      "offset_threshold": 0.35,
-      "duration_ms": 1000
-    }
-  }
+  "expected_version": 6,
+  "rules": {"obstacle": {"warning_distance_m": 20}}
 }
 ```
+
+只允许 expected_version/rules。拒绝 null、空 rules、空规则子对象、未知字段、尾随 JSON 和类型错误。非法字段返回 HTTP 400/code 40001，error.field 标明如 rules.obstacle.danger_distance_m 的路径。过期 expected_version 返回 HTTP 409/code 40902；同旧版本并发更新只有一次成功。
+
+规则校验：0 < danger_distance_m < warning_distance_m；0 < offset_threshold <= 1；yaw_threshold_deg_s > 0；min_speed_kmh >= 0；recover_c < trigger_c。所有 duration_ms 为正整数，数值有限并能由服务端类型表示；温度允许为负数。
 
 平台执行：
 
 ```text
-校验配置
+核对 expected_version，合并和校验规则
 ↓
-config_version + 1
+事务内 version + 1，保存完整期望配置与 pending 版本记录
 ↓
-写入数据库
+提交后返回 HTTP 202/pending
 ↓
-MQTT 发布 config
+异步 QoS 1 retained 发布 config
 ↓
-等待 config ack
+等待 config-ack；通过 GET 查询结果
 ```
 
-Response：
+HTTP 202 Response：
 
 ```json
-{
-  "code": 0,
-
-  "data": {
-    "config_version": 7,
-    "status": "pending"
-  }
-}
+{"code":0,"message":"ok","data":{"config_version":7,"status":"pending"}}
 ```
+
+- 每个有效 PUT 创建新版本，包括提交同值的请求；没有 HTTP 幂等键。
+- 已登记设备离线仍可受理，供上线时读取 retained 最新规则；MQTT 不可用在写入前返回 503/50302。未知设备为 404/40401；数据库故障为 500/50001，且不得先发布再落库。
+- 受理后的发布失败或交付不确定保持 pending，记录诊断，不制造设备失败。只在合法 success/failed config-ack 到达后保存设备结果；每版本首个有效终态不被重复、冲突或迟到发布回调覆盖。
+- 启动和 Broker 重连先恢复 telemetry/status/command-acks/events/config-acks，再从 SQLite 补发各设备最新期望规则，含已完成版本，用于重建 Broker retained 数据。版本、规则和 issued_at 不变；不重发动作命令。
+- 配置使用专用版本记录校验 Ack 归属。非法身份/协议/结果结构、未知/未来/跨设备版本不更新；旧成功版本最多补充确认事实，不回退 reported_version 或改写新版本结果。
+- 本轮通过 GET 查询同步结果，不新增 WS config_update。
 
 ---
 
@@ -2209,6 +2194,7 @@ Body：
 
 ```json
 {
+  "expected_version": 6,
   "rules": {
     "obstacle": {
       "warning_distance_m": 20,
@@ -2221,9 +2207,9 @@ Body：
 Go：
 
 ```text
-读取 current config version
+GET 读取 desired_version，并提交 expected_version
 ↓
-version + 1
+事务内核对条件版本，合并规则并 version + 1
 ↓
 数据库保存 desired config
 ↓
@@ -2359,6 +2345,18 @@ desired_version
 reported_version
 config_json
 updated_at
+```
+
+## config_revisions
+
+```text
+(device_id, config_version) UNIQUE
+config_json  // 不可变的完整签发规则
+issued_at
+status       // pending/success/failed，首个有效回执终态
+ack_at       // 平台时间，可空
+applied_at   // 设备成功时间，可空
+error_json   // 设备失败，可空
 ```
 
 ## snapshots

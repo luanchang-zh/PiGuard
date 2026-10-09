@@ -23,19 +23,25 @@ func main() {
 	duration := flag.Duration("duration", 10*time.Second, "模拟持续时间")
 	ackMode := flag.String("ack-mode", "success", "命令回执模式: success/failed/none")
 	ackDelay := flag.Duration("ack-delay", 0, "回执延迟，用于验证迟到和超时")
+	configMode := flag.String("config-ack-mode", "success", "配置回执模式: success/failed/none")
+	configDelay := flag.Duration("config-ack-delay", 0, "配置回执延迟")
 	flag.Parse()
-	if *duration <= 0 || *ackDelay < 0 {
+	if *duration <= 0 || *ackDelay < 0 || *configDelay < 0 {
 		fmt.Fprintln(os.Stderr, "duration must be positive")
 		os.Exit(1)
 	}
-	if err := run(*broker, *device, *duration, *ackMode, *ackDelay); err != nil {
+	if err := run(*broker, *device, *duration, *ackMode, *ackDelay, *configMode, *configDelay); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration) error {
+func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration, configMode string, configDelay time.Duration) error {
 	executor, err := simulator.NewCommandExecutor(ackMode)
+	if err != nil {
+		return err
+	}
+	configExecutor, err := simulator.NewConfigExecutor(configMode)
 	if err != nil {
 		return err
 	}
@@ -63,7 +69,15 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ackCtx, cancelAcks := context.WithCancel(ctx)
-	ackQueue := make(chan protocol.CommandAck, 64)
+	type queuedAck struct {
+		kind  string
+		data  any
+		delay time.Duration
+	}
+	ackQueue := make(chan queuedAck, 64)
+	deviceStatus := func() map[string]any {
+		return map[string]any{"schema_version": 1, "device_id": id, "online": true, "timestamp": time.Now().UTC(), "software_version": "0.1.0", "config_version": configExecutor.Version(id), "mode": "mock", "sensors": map[string]string{"distance": "ok", "camera": "ok", "gyro": "ok", "temperature": "ok"}, "mqtt": map[string]bool{"connected": true}}
+	}
 	ackDone := make(chan struct{})
 	go func() {
 		defer close(ackDone)
@@ -72,15 +86,20 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 			case <-ackCtx.Done():
 				return
 			case ack := <-ackQueue:
-				timer := time.NewTimer(ackDelay)
+				timer := time.NewTimer(ack.delay)
 				select {
 				case <-ackCtx.Done():
 					timer.Stop()
 					return
 				case <-timer.C:
 				}
-				if err := publish("command-acks", ack, 1, false); err != nil {
+				if err := publish(ack.kind, ack.data, 1, false); err != nil {
 					fmt.Fprintln(os.Stderr, "command Ack:", err)
+				}
+				if ack.kind == "config-acks" {
+					if err := publish("status", deviceStatus(), 1, true); err != nil {
+						fmt.Fprintln(os.Stderr, "status:", err)
+					}
 				}
 			}
 		}
@@ -99,7 +118,7 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 			return
 		}
 		select {
-		case ackQueue <- *ack:
+		case ackQueue <- queuedAck{kind: "command-acks", data: *ack, delay: ackDelay}:
 		case <-ackCtx.Done():
 		default:
 			fmt.Fprintln(os.Stderr, "回执队列已满")
@@ -111,7 +130,29 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 	if err := token.Error(); err != nil {
 		return err
 	}
-	status := map[string]any{"schema_version": 1, "device_id": id, "online": true, "timestamp": time.Now().UTC(), "software_version": "0.1.0", "config_version": 0, "mode": "mock", "sensors": map[string]string{"distance": "ok", "camera": "ok", "gyro": "ok", "temperature": "ok"}, "mqtt": map[string]bool{"connected": true}}
+	token = c.Subscribe("car/"+id+"/config", 1, func(_ paho.Client, msg paho.Message) {
+		ack, _, err := configExecutor.Apply(msg.Topic(), msg.Payload(), time.Now().UTC())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "拒绝配置:", err)
+			return
+		}
+		if ack == nil {
+			return
+		}
+		select {
+		case ackQueue <- queuedAck{kind: "config-acks", data: *ack, delay: configDelay}:
+		case <-ackCtx.Done():
+		default:
+			fmt.Fprintln(os.Stderr, "回执队列已满")
+		}
+	})
+	if !token.WaitTimeout(3 * time.Second) {
+		return fmt.Errorf("MQTT config subscription timeout")
+	}
+	if err := token.Error(); err != nil {
+		return err
+	}
+	status := deviceStatus()
 	if err := publish("status", status, 1, true); err != nil {
 		return err
 	}

@@ -19,25 +19,42 @@ func NewPublisher(client *Client) *Publisher {
 }
 
 func (p *Publisher) Available() bool {
-	return p.client != nil && p.client.Raw() != nil && p.client.Raw().IsConnectionOpen()
+	return p.client != nil && p.client.publishClient() != nil
 }
 func (p *Publisher) Publish(ctx context.Context, topic string, qos byte, retained bool, payload []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !p.Available() {
+	if p.client == nil {
 		return apperr.ErrMQTTUnavailable
 	}
-	token := p.client.Raw().Publish(topic, qos, retained, payload)
+	raw := p.client.publishClient()
+	if raw == nil {
+		return apperr.ErrMQTTUnavailable
+	}
 	waitCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
+	// Paho Publish itself may wait on its outbound queue. Cancellation closes
+	// that session before returning, so it cannot send an old packet after a
+	// new session restores a newer retained value.
+	result := make(chan error, 1)
+	go func() {
+		token := raw.Publish(topic, qos, retained, payload)
+		select {
+		case <-token.Done():
+			result <- token.Error()
+		case <-waitCtx.Done():
+		}
+	}()
 	select {
-	case <-token.Done():
-		if err := token.Error(); err != nil {
+	case err := <-result:
+		if err != nil {
+			p.client.abortPublish(raw, err)
 			return fmt.Errorf("%w: %v", apperr.ErrPublishUncertain, err)
 		}
 		return nil
 	case <-waitCtx.Done():
+		p.client.abortPublish(raw, waitCtx.Err())
 		return fmt.Errorf("%w: %v", apperr.ErrPublishUncertain, waitCtx.Err())
 	}
 }

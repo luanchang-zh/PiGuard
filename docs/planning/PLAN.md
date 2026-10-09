@@ -49,7 +49,7 @@
 
 新分支为 `edge`，基点是 `main` 的 `e975d4b51d0dd5d42b9c1f1bb1e8ae0c1f0a6113`。选择 main 而非 Go 分支作为父分支，使本分支无需携带后端代码和其开发提交。
 
-职责边界：边缘源码/配置/测试/设备部署全部放在 `edge/`；永久规划放 `docs/PLAN.md`；进度和下一步只放根目录 `HANDOFF.md`。共享课设文档保持独立。需要修改 Go 能力时切到后端分支完成，再由统一集成分支合并两端；不在边缘分支改 Go。
+职责边界：边缘源码/配置/测试/设备部署全部放在 `edge/`；永久规划放 `docs/planning/PLAN.md`；进度和下一步只放根目录 `HANDOFF.md`。课设方案与网络规范作为整体约束，放在 `docs/constraints/`，与本分支实施规划分开。需要修改 Go 能力时切到后端分支完成，再由统一集成分支合并两端；不在边缘分支改 Go。
 
 联调使用另一独立后端 checkout，或已运行的后端服务，通过 MQTT/HTTP 通信。当前 checkout 用于边缘开发。不要为联调将 go-backend 拷入 edge，不使用对方的数据库文件，不对同一 device_id 同时运行 Go 模拟器与 Python 边缘端，否则状态和遗嘱会互相覆盖。
 
@@ -58,9 +58,11 @@ PiGuard/
 ├── README.md
 ├── HANDOFF.md
 ├── docs/
-│   ├── PLAN.md
-│   ├── raspberry_pi_adas_course_design.md
-│   └── adas_network_api_spec.md
+│   ├── constraints/          # 课设与网络交互的整体约束
+│   │   ├── raspberry_pi_adas_course_design.md
+│   │   └── adas_network_api_spec.md
+│   └── planning/             # 当前树莓派边缘端实施规划
+│       └── PLAN.md
 └── edge/
     ├── README.md
     ├── pyproject.toml

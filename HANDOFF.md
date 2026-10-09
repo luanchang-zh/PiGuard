@@ -8,7 +8,8 @@
 
 ## 重要文件与已确定事项
 
-- `docs/PLAN.md`：后端事实、契约差异、P0—P7和验收门槛。
+- `docs/planning/PLAN.md`：后端事实、契约差异、P0—P7和验收门槛。
+- `docs/constraints/`：课设方案与网络交互规范，作为整体约束，不随本分支实施计划改写。
 - `edge/README.md`：模块边界和入口；`edge/config/default.example.yaml` 是设计示例，尚无加载器。
 - 后端已完成telemetry/status、四类动作/Ack、events；配置/图片仍不可用。
 - 命令有效期10秒，Ack执行时间为UTC；事件恢复level仍为warning/danger，三种action各用新event_id。

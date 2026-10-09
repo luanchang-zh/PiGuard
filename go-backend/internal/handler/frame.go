@@ -1,44 +1,76 @@
 package handler
 
 import (
-	"piguard/go-backend/internal/service"
-
+	"errors"
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"io"
+	"net/http"
+	"piguard/go-backend/internal/apperr"
+	"piguard/go-backend/internal/protocol"
+	"piguard/go-backend/internal/service"
 )
 
-// FrameHandler 处理摄像头图片的上传和读取。
-// 图片走 HTTP，不走 MQTT。文件落在截图目录，接口本身尚未实现。
-type FrameHandler struct {
-	svc service.FrameService
-}
+type FrameHandler struct{ svc service.FrameService }
 
-func NewFrameHandler(svc service.FrameService) *FrameHandler {
-	return &FrameHandler{svc: svc}
-}
-
-// Upload 对应 POST /api/v1/devices/:device_id/frames，内容类型为 multipart/form-data。
+func NewFrameHandler(svc service.FrameService) *FrameHandler { return &FrameHandler{svc: svc} }
 func (h *FrameHandler) Upload(c *gin.Context) {
-	if err := h.svc.Save(c.Request.Context(), c.Param("device_id")); err != nil {
+	if c.Request.ContentLength > protocol.MaxFrameBodyBytes {
+		writeError(c, &apperr.FrameTooLarge{Field: "body"})
+		return
+	}
+	limited := http.MaxBytesReader(c.Writer, c.Request.Body, protocol.MaxFrameBodyBytes)
+	defer limited.Close()
+	raw, err := io.ReadAll(protocol.ContextReader{Context: c.Request.Context(), Reader: limited})
+	if err != nil {
+		var limit *http.MaxBytesError
+		if errors.As(err, &limit) {
+			writeError(c, &apperr.FrameTooLarge{Field: "body"})
+		} else {
+			writeError(c, &apperr.InvalidParams{Field: "body"})
+		}
+		return
+	}
+	upload, err := protocol.ParseFrame(c.Request.Context(), c.GetHeader("Content-Type"), raw)
+	if err != nil {
 		writeError(c, err)
 		return
 	}
-	writeOK(c, gin.H{})
+	result, created, err := h.svc.Save(c.Request.Context(), c.Param("device_id"), *upload)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, Response{Code: apperr.CodeOK, Message: "ok", Data: result})
 }
-
-// Latest 对应 GET /api/v1/devices/:device_id/frame，返回最新预览的访问地址。
 func (h *FrameHandler) Latest(c *gin.Context) {
-	if err := h.svc.Latest(c.Request.Context(), c.Param("device_id")); err != nil {
+	view, err := h.svc.Latest(c.Request.Context(), c.Param("device_id"))
+	if err != nil {
 		writeError(c, err)
 		return
 	}
-	writeOK(c, gin.H{})
+	writeOK(c, view)
 }
-
-// Content 对应 GET /api/v1/snapshots/:snapshot_id/content，下一步会直接写出 JPEG。
 func (h *FrameHandler) Content(c *gin.Context) {
-	if err := h.svc.Open(c.Request.Context(), c.Param("snapshot_id")); err != nil {
+	f, err := h.svc.Open(c.Request.Context(), c.Param("snapshot_id"))
+	if err != nil {
 		writeError(c, err)
 		return
 	}
-	writeOK(c, gin.H{})
+	defer f.Close()
+	// Read before writing headers so disk read failures retain the JSON error contract.
+	raw, err := io.ReadAll(io.LimitReader(protocol.ContextReader{Context: c.Request.Context(), Reader: f}, protocol.MaxJPEGBytes+1))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if len(raw) > protocol.MaxJPEGBytes {
+		writeError(c, fmt.Errorf("stored snapshot exceeds byte limit"))
+		return
+	}
+	c.Data(http.StatusOK, "image/jpeg", raw)
 }

@@ -32,6 +32,8 @@ func writeError(c *gin.Context, err error) {
 		status, code int
 		message      string
 	}{
+		{apperr.ErrSnapshotNotFound, http.StatusNotFound, apperr.CodeSnapshotNotFound, "snapshot not found"},
+		{apperr.ErrFrameConflict, http.StatusConflict, apperr.CodeFrameConflict, "frame identity conflict"},
 		{apperr.ErrConfigVersionConflict, http.StatusConflict, apperr.CodeConfigVersionConflict, "config version conflict"},
 		{apperr.ErrCommandNotFound, http.StatusNotFound, apperr.CodeCommandNotFound, "command not found"},
 		{apperr.ErrDeviceOffline, http.StatusServiceUnavailable, apperr.CodeDeviceOffline, "device offline"},
@@ -47,6 +49,11 @@ func writeError(c *gin.Context, err error) {
 		return
 	}
 	var invalid *apperr.InvalidParams
+	var tooLarge *apperr.FrameTooLarge
+	if errors.As(err, &tooLarge) {
+		c.JSON(http.StatusRequestEntityTooLarge, Response{Code: apperr.CodeInvalidParams, Message: "frame limit exceeded", Error: gin.H{"field": tooLarge.Field}})
+		return
+	}
 	if errors.As(err, &invalid) {
 		c.JSON(http.StatusBadRequest, Response{Code: apperr.CodeInvalidParams, Message: "invalid parameter", Error: gin.H{"field": invalid.Field}})
 		return

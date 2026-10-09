@@ -12,11 +12,13 @@ const (
 	// CodeDeviceNotFound 表示 device_id 在平台上不存在。
 	CodeDeviceNotFound = 40401
 	// CodeCommandNotFound 表示 command_id 不存在。
-	CodeCommandNotFound = 40402
+	CodeCommandNotFound  = 40402
+	CodeSnapshotNotFound = 40403
 	// CodeCommandDuplicated 表示同一条命令被重复提交。
 	CodeCommandDuplicated = 40901
 	// CodeConfigVersionConflict 表示配置版本冲突，客户端持有的不是最新期望版本。
 	CodeConfigVersionConflict = 40902
+	CodeFrameConflict         = 40903
 	// CodeDeviceOffline 表示动作类命令在设备离线时被拒绝。
 	CodeDeviceOffline = 50301
 	// CodeMQTTUnavailable 表示平台当前发不出 MQTT 消息。
@@ -36,6 +38,12 @@ var ErrCommandNotFound = errors.New("command not found")
 var ErrDeviceOffline = errors.New("device offline")
 var ErrMQTTUnavailable = errors.New("MQTT unavailable")
 var ErrConfigVersionConflict = errors.New("config version conflict")
+var ErrSnapshotNotFound = errors.New("snapshot not found")
+var ErrFrameConflict = errors.New("frame identity conflict")
+
+type FrameTooLarge struct{ Field string }
+
+func (e *FrameTooLarge) Error() string { return "frame limit exceeded: " + e.Field }
 
 // ErrPublishUncertain means that the message may already have reached the device.
 var ErrPublishUncertain = errors.New("MQTT delivery uncertain")

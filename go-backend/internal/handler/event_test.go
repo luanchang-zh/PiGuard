@@ -63,7 +63,7 @@ func (f *eventFixture) open(t *testing.T) {
 	sql, _ := g.DB()
 	f.server = httptest.NewServer(NewEngine(Dependencies{
 		Ping: sql.PingContext, Devices: devices, Telemetry: service.NewTelemetryService(repo.NewTelemetryRepository(g), f.devices),
-		Events: f.events, Hub: f.hub, Frames: service.NewFrameService(repo.NewSnapshotRepository(g), t.TempDir()),
+		Events: f.events, Hub: f.hub, Frames: service.NewFrameService(repo.NewSnapshotRepository(g), f.devices, t.TempDir(), f.hub),
 	}))
 }
 
@@ -273,12 +273,16 @@ func TestAlarmEventsHTTPAndWebSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var invalidFrame Response
+	if err := json.NewDecoder(response.Body).Decode(&invalidFrame); err != nil {
+		t.Fatal(err)
+	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusNotImplemented {
-		t.Fatal(response.StatusCode)
+	if response.StatusCode != http.StatusBadRequest || invalidFrame.Code != 40001 || invalidFrame.Error == nil {
+		t.Fatal(response.StatusCode, invalidFrame)
 	}
 	code, envelope, _ = f.call(t, "/api/v1/snapshots/snap-001/content")
-	if code != http.StatusNotImplemented || envelope.Code != 50001 {
+	if code != http.StatusNotFound || envelope.Code != 40403 {
 		t.Fatal(code, envelope)
 	}
 	var count int64

@@ -1466,90 +1466,70 @@ Response：
 
 ## POST /api/v1/devices/{device_id}/frames
 
-方向：
+方向：Raspberry Pi → Go，Content-Type 为 multipart/form-data。正文严格包含一个 file、frame_id、captured_at、type；未知、重复或缺失字段、多文件和错误 multipart 返回 400/40001，并指出 error.field。
 
-```text
-Raspberry Pi -> Go
-```
+| 字段 | 契约 |
+| --- | --- |
+| file | 非空有效 JPEG，以实际字节、尺寸和完整解码判断，保留原始字节；文件名和 MIME 声明不影响有效性 |
+| frame_id | 设备侧 1—64 字符标识，仅 ASCII 字母、数字、下划线、连字符 |
+| captured_at | 带时区 RFC3339/RFC3339Nano，归一 UTC；不额外限制设备时钟偏移 |
+| type | preview / snapshot / event |
 
-Content-Type：
+JPEG ≤2 MiB（2,097,152 字节），总 HTTP 正文 ≤2 MiB+64 KiB，单边 ≤4096，总像素 ≤16,777,216。字节、正文或尺寸超限返回 413/40001；无效、损坏或截断 JPEG 返回 400/40001。拒绝请求不会落库或推送。
 
-```text
-multipart/form-data
-```
-
-字段：
-
-```text
-file
-frame_id
-captured_at
-type
-```
-
-type：
-
-```text
-preview
-snapshot
-event
-```
+只接受已登记设备，未知设备 404/40401。设备离线或运行中 MQTT 暂时断线不额外拒绝图片；上传不改变 online、last_seen_at、命令或配置版本。初次启动仍要求 Broker 连接成功。
 
 ---
 
 # 42. 图片上传 Response
 
+新上传返回 HTTP 201/code 0：
+
 ```json
 {
   "code": 0,
-
+  "message": "ok",
   "data": {
     "snapshot_id": "snap-001",
-
     "device_id": "car-001",
-
     "type": "snapshot",
-
     "captured_at": "2026-09-29T10:30:00Z"
   }
 }
 ```
 
+snapshot_id 由服务端生成，稳定且不可变，不暴露数据库 ID。以 (device_id, frame_id) 为幂等身份；相同归一后的采集时间、类型、原始字节重试返回 HTTP 200/code 0 和原 ID，不重复保存或通知；内容或元数据冲突返回 HTTP 409/40903，并保留首个结果。跨设备同 frame_id 独立，并发重试只有一份成功持久记录。
+
+文件位于配置截图目录，SQLite 只保存元数据。文件写入、持久化与最终发布完成后才提交可查询记录；提交前写入/数据库失败或取消会回收本请求的临时与未提交文件，不推进预览或通知。提交成功后 HTTP 断连不撤销图片，同身份重试可找回结果。重启保留已提交图片；临时/未引用文件不作为有效图片，不自动清理用户文件或历史图片。
+
 ---
 
 # 43. GET /api/v1/devices/{device_id}/frame
 
-用于获取最新预览。
-
-可以返回：
-
-```text
-image/jpeg
-```
-
-或者：
+返回最新 preview 的 JSON；snapshot/event 不覆盖预览：
 
 ```json
 {
   "code": 0,
-
+  "message": "ok",
   "data": {
+    "snapshot_id": "snap-001",
+    "type": "preview",
+    "captured_at": "2026-09-29T10:30:00Z",
     "url": "/api/v1/snapshots/snap-001/content"
   }
 }
 ```
 
-推荐第二种，方便前端缓存和扩展。
+按 captured_at 选择最新，同时间按平台成功提交顺序。迟到旧图保留独立 ID 和可读内容，但不覆盖当前 preview 或发送 frame_update。已登记但无 preview 返回 404/40403；未知设备返回 404/40401。URL 对应不可变图片，不是可变的“当前文件”。
 
 ---
 
 # 44. GET /api/v1/snapshots/{snapshot_id}/content
 
-直接返回：
+返回 HTTP 200、Content-Type: image/jpeg 与保存的原始字节。未知 ID 或已登记但文件缺失返回 404/40403；数据库或其他读取错误返回 500/50001。不接受任意文件路径，不使用客户端文件名/frame_id 构造路径，不泄露服务端目录。
 
-```text
-Content-Type: image/jpeg
-```
+本轮不提供 PNG、视频、缩略图、重压缩、历史分页、图片删除或 TTL 清理。图片持久保留。camera.snapshot 命令及完整图片引用闭环留下一轮，上传 snapshot/event 本身不创建命令结果或告警。
 
 ---
 
@@ -1687,24 +1667,20 @@ frame_update
 ```json
 {
   "type": "frame_update",
-
   "timestamp": "2026-09-29T10:30:01Z",
-
   "data": {
     "device_id": "car-001",
     "snapshot_id": "snap-001",
-    "type": "preview"
+    "type": "preview",
+    "captured_at": "2026-09-29T10:30:00Z",
+    "url": "/api/v1/snapshots/snap-001/content"
   }
 }
 ```
 
-前端收到后再更新：
+文件和元数据可读并成功提交后，新的 snapshot/event，以及成为当前 preview 的图片，发布一次通知。timestamp 为平台时间，captured_at 为设备采集时间；幂等重试、拒绝、失败和迟到旧 preview 不通知，预览通知按采集时间/同时间提交顺序保持不回退。双客户端收到一致 DTO，慢客户端沿用有界队列和关闭策略。
 
-```text
-/api/v1/snapshots/snap-001/content
-```
-
-避免直接把大图片塞进 WebSocket JSON。
+前端收到后读取 data.url；WS 不传 JPEG 大对象。保留 telemetry/event/device_status/command_update 原有语义，不新增 config_update。
 
 ---
 
@@ -1745,11 +1721,15 @@ frame_update
 
 201 Created
 
+202 Accepted
+
 400 Bad Request
 
 404 Not Found
 
 409 Conflict
+
+413 Content Too Large
 
 422 Unprocessable Entity
 
@@ -1777,11 +1757,17 @@ DEVICE_NOT_FOUND
 40402
 COMMAND_NOT_FOUND
 
+40403
+SNAPSHOT_NOT_FOUND
+
 40901
 COMMAND_DUPLICATED
 
 40902
 CONFIG_VERSION_CONFLICT
+
+40903
+FRAME_IDENTITY_CONFLICT
 
 50301
 DEVICE_OFFLINE
@@ -2364,11 +2350,18 @@ error_json   // 设备失败，可空
 ```text
 snapshot_id UNIQUE
 device_id
+frame_id  // 与 device_id 构成唯一身份，旧占位模型迁移行允许 NULL
 type
-path
+path       // 服务端生成的根目录内相对文件名，不接受客户端路径
+sha256
+size
 captured_at
+captured_seconds     // 精确排序，覆盖 RFC3339 全年份
+captured_nanosecond
 created_at
 ```
+
+JPEG 原始字节放在 storage.snapshot_dir，不存入 SQLite。预览按采集秒、纳秒、自增提交 ID 降序查询；平台提交与 frame_update 顺序一致。
 
 ---
 

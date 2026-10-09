@@ -109,7 +109,7 @@ func Run(cfg *config.Config) error {
 		Events:    eventSvc,
 		Commands:  commandSvc,
 		Configs:   configSvc,
-		Frames:    service.NewFrameService(repo.NewSnapshotRepository(gormDB), cfg.Storage.SnapshotDir),
+		Frames:    service.NewFrameService(repo.NewSnapshotRepository(gormDB), deviceRepo, cfg.Storage.SnapshotDir, hub),
 		Hub:       hub,
 	})
 

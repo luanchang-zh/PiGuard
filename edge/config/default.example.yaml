@@ -1,0 +1,94 @@
+# 设计示例：配置加载器和运行服务将在P1/P2实现。
+# 所有相对路径均相对于本配置文件目录；真实凭据用本地覆盖/环境变量。
+device:
+  id: car-001
+  mode: mock
+  config_version: 0
+
+mqtt:
+  host: 127.0.0.1
+  port: 1883
+  client_id: piguard-edge-car-001
+  keepalive_s: 30
+  telemetry_qos: 0
+  event_qos: 1
+  status_qos: 1
+  command_qos: 1
+  ack_qos: 1
+  status_heartbeat_s: 10
+
+http:
+  base_url: http://127.0.0.1:8080/api/v1
+  timeout_s: 3
+
+sensors:
+  distance:
+    driver: mock
+    sample_hz: 10
+  gyro:
+    driver: mock
+    sample_hz: 50
+  temperature:
+    driver: mock
+    sample_hz: 1
+  camera:
+    driver: synthetic
+    capture_fps: 10
+    process_fps: 5
+    width: 640
+    height: 480
+
+speed:
+  driver: scenario
+  sample_hz: 10
+
+simulation:
+  scenario: normal_drive
+  playback_speed: 1.0
+
+mapping:
+  distance_scale: 100
+
+runtime:
+  rule_hz: 10
+  telemetry_hz: 2
+  ttl_ms:
+    speed: 1000
+    distance: 1000
+    gyro: 1000
+    lane: 1000
+    temperature: 5000
+
+rules:
+  obstacle:
+    warning_distance_m: 15
+    danger_distance_m: 8
+    headway_enabled: true
+    warning_headway_s: 1.5
+    danger_headway_s: 0.8
+  lane_departure:
+    offset_threshold: 0.35
+    duration_ms: 1000
+  sharp_turn:
+    yaw_threshold_deg_s: 30
+    min_speed_kmh: 20
+    duration_ms: 300
+  temperature:
+    trigger_c: 35
+    recover_c: 33
+    duration_ms: 5000
+    recover_duration_ms: 5000
+
+actuators:
+  driver: mock
+
+storage:
+  sqlite_path: ../data/edge.db
+  event_confirmation: http_query
+  # 只回收已由平台查询确认的事件；未确认事件不按这个时间自动删除。
+  confirmed_event_retention_days: 7
+
+features:
+  # 现有Go后端仍缺少这些能力，默认关闭。
+  remote_config: false
+  frame_upload: false

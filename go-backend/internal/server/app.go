@@ -81,7 +81,8 @@ func Run(cfg *config.Config) error {
 	})
 	publisher := mqtt.NewPublisher(mqttClient)
 	commandSvc := service.NewCommandService(repo.NewCommandRepository(gormDB), deviceRepo, publisher, monitor.Online, hub)
-	subscriber := mqtt.NewSubscriber(mqttClient, monitor, commandSvc)
+	eventSvc := service.NewEventService(repo.NewEventRepository(gormDB), deviceRepo, hub)
+	subscriber := mqtt.NewSubscriber(mqttClient, monitor, commandSvc, eventSvc)
 	defer subscriber.Close()
 	if err := mqttClient.Connect(); err != nil {
 		return err
@@ -100,7 +101,7 @@ func Run(cfg *config.Config) error {
 		Ping:      sqlDB.PingContext,
 		Devices:   deviceSvc,
 		Telemetry: service.NewTelemetryService(historyRepo, deviceRepo),
-		Events:    service.NewEventService(repo.NewEventRepository(gormDB)),
+		Events:    eventSvc,
 		Commands:  commandSvc,
 		Configs:   service.NewConfigService(configRepo, publisher),
 		Frames:    service.NewFrameService(repo.NewSnapshotRepository(gormDB), cfg.Storage.SnapshotDir),

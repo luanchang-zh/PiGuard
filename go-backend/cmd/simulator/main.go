@@ -115,6 +115,9 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 	if err := publish("status", status, 1, true); err != nil {
 		return err
 	}
+	if err := simulator.PublishDemoEvent(publish, id, fmt.Sprintf("evt-sim-%d", time.Now().UnixNano()), time.Now().UTC()); err != nil {
+		return err
+	}
 	defer func() {
 		cancelAcks()
 		<-ackDone

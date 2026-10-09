@@ -10,7 +10,7 @@ type Event struct {
 	DeviceID string `gorm:"size:64;index;not null"`
 	// Type 取值见规范：obstacle_warning、lane_departure、sharp_turn、high_temperature、sensor_failure。
 	Type string `gorm:"size:64;index;not null"`
-	// Action 表示告警生命周期，例如 started、updated、recovered。
+	// Action 取 started、level_changed、recovered。每条 MQTT 消息单独成行，不回写旧记录。
 	Action string `gorm:"size:32;not null"`
 	Level  string `gorm:"size:16;not null"`
 	// Payload 保存事件 data 对象的 JSON 原文。不同告警的字段不一样，不拆成固定列。

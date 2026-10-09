@@ -12,22 +12,23 @@ import (
 	"time"
 )
 
-var uplinkFilters = map[string]byte{"car/+/telemetry": 0, "car/+/status": 1, "car/+/command-acks": 1}
+var uplinkFilters = map[string]byte{"car/+/telemetry": 0, "car/+/status": 1, "car/+/command-acks": 1, "car/+/events": 1}
 
 // Subscriber is configured before Connect; Start verifies the first subscription.
 type Subscriber struct {
 	client   *Client
 	monitor  *service.Monitor
 	commands *service.CommandManager
+	events   service.EventService
 	ctx      context.Context
 	cancel   context.CancelFunc
 	started  atomic.Bool
 	mu       sync.Mutex
 }
 
-func NewSubscriber(client *Client, monitor *service.Monitor, commands *service.CommandManager) *Subscriber {
+func NewSubscriber(client *Client, monitor *service.Monitor, commands *service.CommandManager, events service.EventService) *Subscriber {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Subscriber{client: client, monitor: monitor, commands: commands, ctx: ctx, cancel: cancel}
+	s := &Subscriber{client: client, monitor: monitor, commands: commands, events: events, ctx: ctx, cancel: cancel}
 	client.opts.SetOnConnectHandler(func(raw paho.Client) {
 		if !s.started.Load() {
 			return
@@ -79,13 +80,22 @@ func (s *Subscriber) subscribe(raw paho.Client) error {
 	token := raw.SubscribeMultiple(uplinkFilters, func(_ paho.Client, msg paho.Message) {
 		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 		defer cancel()
-		if strings.HasSuffix(msg.Topic(), "/command-acks") {
+		switch {
+		case strings.HasSuffix(msg.Topic(), "/command-acks"):
 			if err := s.commands.IngestAck(ctx, msg.Topic(), msg.Payload()); err != nil {
 				slog.Warn("拒绝命令回执", "topic", msg.Topic(), "err", err)
 			}
-			return
+		case strings.HasSuffix(msg.Topic(), "/events"):
+			if s.events == nil {
+				slog.Warn("告警服务未配置", "topic", msg.Topic())
+				return
+			}
+			if err := s.events.Ingest(ctx, msg.Topic(), msg.Payload()); err != nil {
+				slog.Warn("拒绝告警事件", "topic", msg.Topic(), "err", err)
+			}
+		default:
+			s.monitor.LogIngest(ctx, msg.Topic(), msg.Payload())
 		}
-		s.monitor.LogIngest(ctx, msg.Topic(), msg.Payload())
 	})
 	if !token.WaitTimeout(s.client.timeout) {
 		return fmt.Errorf("MQTT 订阅超时")

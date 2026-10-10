@@ -25,22 +25,28 @@ func main() {
 	ackDelay := flag.Duration("ack-delay", 0, "回执延迟，用于验证迟到和超时")
 	configMode := flag.String("config-ack-mode", "success", "配置回执模式: success/failed/none")
 	configDelay := flag.Duration("config-ack-delay", 0, "配置回执延迟")
+	api := flag.String("api", "http://127.0.0.1:8080", "拍照上传的后端 HTTP 根地址")
 	flag.Parse()
 	if *duration <= 0 || *ackDelay < 0 || *configDelay < 0 {
 		fmt.Fprintln(os.Stderr, "duration must be positive")
 		os.Exit(1)
 	}
-	if err := run(*broker, *device, *duration, *ackMode, *ackDelay, *configMode, *configDelay); err != nil {
+	if err := run(*broker, *device, *duration, *ackMode, *ackDelay, *configMode, *configDelay, *api); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration, configMode string, configDelay time.Duration) error {
+func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration, configMode string, configDelay time.Duration, api string) error {
 	executor, err := simulator.NewCommandExecutor(ackMode)
 	if err != nil {
 		return err
 	}
+	snapshots, err := simulator.NewSnapshotClient(api)
+	if err != nil {
+		return err
+	}
+	executor.SetCameraCapture(snapshots.Capture)
 	configExecutor, err := simulator.NewConfigExecutor(configMode)
 	if err != nil {
 		return err
@@ -75,6 +81,11 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 		delay time.Duration
 	}
 	ackQueue := make(chan queuedAck, 64)
+	type queuedCommand struct {
+		topic   string
+		payload []byte
+	}
+	commandQueue := make(chan queuedCommand, 64)
 	deviceStatus := func() map[string]any {
 		return map[string]any{"schema_version": 1, "device_id": id, "online": true, "timestamp": time.Now().UTC(), "software_version": "0.1.0", "config_version": configExecutor.Version(id), "mode": "mock", "sensors": map[string]string{"distance": "ok", "camera": "ok", "gyro": "ok", "temperature": "ok"}, "mqtt": map[string]bool{"connected": true}}
 	}
@@ -104,24 +115,54 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 			}
 		}
 	}()
-	defer func() { stop(); cancelAcks(); <-ackDone }()
+	commandDone := make(chan struct{})
+	go func() {
+		defer close(commandDone)
+		for {
+			select {
+			case <-ackCtx.Done():
+				return
+			case command := <-commandQueue:
+				if ackCtx.Err() != nil {
+					return
+				}
+				ack, executed, err := executor.ExecuteContext(ackCtx, command.topic, command.payload, time.Now().UTC())
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "拒绝命令:", err)
+					continue
+				}
+				if executed {
+					fmt.Printf("模拟执行命令，累计次数=%d\n", executor.Executions())
+				}
+				if ack == nil {
+					continue
+				}
+				select {
+				case ackQueue <- queuedAck{kind: "command-acks", data: *ack, delay: ackDelay}:
+				case <-ackCtx.Done():
+					return
+				default:
+					fmt.Fprintln(os.Stderr, "回执队列已满")
+				}
+			}
+		}
+	}()
+	onlinePublished := false
+	defer func() {
+		stop()
+		cancelAcks()
+		<-commandDone
+		<-ackDone
+		if onlinePublished {
+			_ = publish("status", map[string]any{"schema_version": 1, "device_id": id, "online": false, "reason": "simulator_stopped"}, 1, true)
+		}
+	}()
 	token = c.Subscribe("car/"+id+"/commands", 1, func(_ paho.Client, msg paho.Message) {
-		ack, executed, err := executor.Execute(msg.Topic(), msg.Payload(), time.Now().UTC())
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "拒绝命令:", err)
-			return
-		}
-		if executed {
-			fmt.Printf("模拟执行命令，累计次数=%d\n", executor.Executions())
-		}
-		if ack == nil {
-			return
-		}
 		select {
-		case ackQueue <- queuedAck{kind: "command-acks", data: *ack, delay: ackDelay}:
+		case commandQueue <- queuedCommand{topic: msg.Topic(), payload: append([]byte(nil), msg.Payload()...)}:
 		case <-ackCtx.Done():
 		default:
-			fmt.Fprintln(os.Stderr, "回执队列已满")
+			fmt.Fprintln(os.Stderr, "命令队列已满")
 		}
 	})
 	if !token.WaitTimeout(3 * time.Second) {
@@ -156,14 +197,10 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 	if err := publish("status", status, 1, true); err != nil {
 		return err
 	}
+	onlinePublished = true
 	if err := simulator.PublishDemoEvent(publish, id, fmt.Sprintf("evt-sim-%d", time.Now().UnixNano()), time.Now().UTC()); err != nil {
 		return err
 	}
-	defer func() {
-		cancelAcks()
-		<-ackDone
-		_ = publish("status", map[string]any{"schema_version": 1, "device_id": id, "online": false, "reason": "simulator_stopped"}, 1, true)
-	}()
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	ticker := time.NewTicker(500 * time.Millisecond)

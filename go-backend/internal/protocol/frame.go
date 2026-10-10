@@ -43,6 +43,10 @@ type FramePush struct {
 	DeviceID string `json:"device_id"`
 }
 
+func SnapshotURL(id string) string {
+	return "/api/v1/snapshots/" + id + "/content"
+}
+
 // ContextReader bounds each read and observes cancellation during decoding/copying.
 type ContextReader struct {
 	Context context.Context

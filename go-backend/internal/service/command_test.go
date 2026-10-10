@@ -66,7 +66,7 @@ func newCommandFixture(t *testing.T) *commandFixture {
 	f.p.available.Store(true)
 	f.online.Store(true)
 	f.clock.Store(time.Now().UTC().UnixNano())
-	f.s = NewCommandService(f.r, d, f.p, func(string) bool { return f.online.Load() }, f.hub)
+	f.s = NewCommandService(f.r, d, f.p, func(string) bool { return f.online.Load() }, f.hub, nil)
 	f.s.now = func() time.Time { return time.Unix(0, f.clock.Load()).UTC() }
 	t.Cleanup(f.hub.Close)
 	t.Cleanup(f.s.Close)
@@ -284,7 +284,7 @@ func TestCommandRecoveryNeverReplays(t *testing.T) {
 	}
 	waitCommand(t, f, "pending", "success")
 	f.s.Close()
-	restored := NewCommandService(f.r, f.s.devices, f.p, f.s.online, f.hub)
+	restored := NewCommandService(f.r, f.s.devices, f.p, f.s.online, f.hub, nil)
 	restored.now = f.s.now
 	f.s = restored
 	t.Cleanup(restored.Close)

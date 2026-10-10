@@ -658,9 +658,9 @@ Platform -> Raspberry Pi
 
 # 16. 命令类型
 
-当前 Go 控制闭环实现 `buzzer.test`、`indicator.test`、`scenario.start`、`scenario.stop`，统一由平台签发 10 秒有效期。下面的摄像头和配置约定属于后续能力；当前普通 commands API 对未支持类型返回 400/40001，配置使用独立 config Topic。
+当前 Go commands API 支持 `buzzer.test`、`indicator.test`、`camera.snapshot`、`scenario.start`、`scenario.stop`，统一由平台签发 10 秒有效期。未知类型返回 400/40001。配置已使用独立 HTTP config 接口和 config/config-acks Topic，不通过普通 commands API；拍照代码已交付，运行验收后置。
 
-第一版：
+commands 类型：
 
 ```text
 buzzer.test
@@ -672,8 +672,6 @@ camera.snapshot
 scenario.start
 
 scenario.stop
-
-config.update
 ```
 
 ---
@@ -738,6 +736,8 @@ red
 
 # 19. camera.snapshot
 
+params 必须为对象，quality 可省略，缺省 80；显式 quality 为 1—100 整数。null、非整数、越界或额外字段拒绝；平台在持久化/下发时补齐缺省 quality。截止沿用 issued_at+10 秒，QoS 1、retained=false。
+
 ```json
 {
   "schema_version": 1,
@@ -765,6 +765,10 @@ HTTP 上传
 ↓
 Command Ack 返回 snapshot_id
 ```
+
+成功 result 严格为仅含非空 snapshot_id 的对象。平台确认该 ID 已提交、属于命令设备、type=snapshot 且文件可打开后，才接受成功回执。未知/跨设备/preview/event/缺文件或非法 result 不改状态、不推送，继续等待合法 Ack 或到期 timeout；读取/DB 故障不能算有效图片。failed 回执沿用 error.code/message，软件上传故障用 SNAPSHOT_UPLOAD_FAILED。
+
+只有平台在有效处理时的接收时间早于 expires_at 才准时；文件校验后重新检查截止，不能用设备 captured_at/executed_at 延长截止。首个终态保持不变，重复/冲突/迟到回执不改写。已上传图片不因命令失败/超时回滚，不要求设备采集时间窗口或一图只能被一命令引用。
 
 ---
 
@@ -1412,6 +1416,8 @@ Request：
 
 # 39. POST camera.snapshot
 
+沿用命令创建 API 的在线、MQTT 可用性及 HTTP 202/pending 受理规则。`{"type":"camera.snapshot","params":{}}` 与 quality=80 等效；没有 HTTP 幂等键，每次合法 POST 创建新命令。
+
 ```json
 {
   "type": "camera.snapshot",
@@ -1461,6 +1467,8 @@ Response：
 ---
 
 命令查询还包含 params。ack_at 为平台收到回执的时间，executed_at 为设备报告的执行时间；未收到回执时两者为 null。result/error 无值为 null；不存在的命令返回 404/40402。WS command_update 的 data 与命令查询 DTO 相同。
+
+camera.snapshot 成功查询/command_update 的 result 为 `{"snapshot_id":"snap-001","url":"/api/v1/snapshots/snap-001/content"}`，URL 由平台派生，原始设备 Ack 只含 snapshot_id，供语义重复判断。之后图片缺失不会改写历史成功，由内容 API 如实返回 404。frame_update 随图片提交产生，command_update 随有效命令状态改变产生，上传图片本身不结束命令。
 
 # 41. 图片上传 API
 
@@ -1529,7 +1537,7 @@ snapshot_id 由服务端生成，稳定且不可变，不暴露数据库 ID。�
 
 返回 HTTP 200、Content-Type: image/jpeg 与保存的原始字节。未知 ID 或已登记但文件缺失返回 404/40403；数据库或其他读取错误返回 500/50001。不接受任意文件路径，不使用客户端文件名/frame_id 构造路径，不泄露服务端目录。
 
-本轮不提供 PNG、视频、缩略图、重压缩、历史分页、图片删除或 TTL 清理。图片持久保留。camera.snapshot 命令及完整图片引用闭环留下一轮，上传 snapshot/event 本身不创建命令结果或告警。
+本轮不提供 PNG、视频、缩略图、重压缩、历史分页、图片删除或 TTL 清理。图片持久保留。camera.snapshot 通过有效 Ack 关联已提交 snapshot；告警图片有效关联留后续，上传 snapshot/event 本身不创建命令结果或告警。图片普通文件同步、不可覆盖发布保留；Linux 另外同步目录，Windows 避免不支持的目录 Sync。双平台运行验证后置。
 
 ---
 
@@ -2255,14 +2263,21 @@ POST /api/v1/devices/car-001/frames
 
 ```json
 {
+  "schema_version": 1,
   "command_id": "cmd-snapshot-001",
+  "device_id": "car-001",
   "status": "success",
+  "executed_at": "2026-09-29T10:30:01Z",
 
   "result": {
     "snapshot_id": "snap-001"
   }
 }
 ```
+
+本阶段软件模拟器使用 `go run ./cmd/simulator -duration 60s -api http://127.0.0.1:8080`，按 quality 生成 320×180 JPEG 后上传 snapshot。命令工作队列与上传独立于 MQTT 回调；同 command_id 重投递只重发缓存结果。上传响应丢失或临时故障最多 3 次同身份/时间/字节重试，受 10 秒命令截止和进程取消约束，失败返回 SNAPSHOT_UPLOAD_FAILED；failed/none 模式不上传。实际 CameraSource.read 仍由 Python/树莓派后续接入。
+
+当前仅交付代码、编译及独立代码核对；测试/test/vet/race、完整软件链路与实际 Broker/Docker/摄像头/硬件运行验证集中在后续 V1/V2，不将示例当作已运行证据。
 
 ---
 

@@ -13,6 +13,46 @@ type CommandRequest struct {
 	Type   string          `json:"type"`
 	Params json.RawMessage `json:"params"`
 }
+type SnapshotParams struct {
+	Quality int `json:"quality"`
+}
+type SnapshotResult struct {
+	SnapshotID string `json:"snapshot_id"`
+}
+
+func ParseSnapshotParams(raw []byte) (SnapshotParams, error) {
+	var fields struct {
+		Quality json.RawMessage `json:"quality"`
+	}
+	if err := decodeObject(raw, &fields); err != nil {
+		return SnapshotParams{}, err
+	}
+	p := SnapshotParams{Quality: 80}
+	if len(fields.Quality) != 0 {
+		if bytes.Equal(bytes.TrimSpace(fields.Quality), []byte("null")) {
+			return SnapshotParams{}, fmt.Errorf("quality must be an integer from 1 to 100")
+		}
+		if err := json.Unmarshal(fields.Quality, &p.Quality); err != nil {
+			return SnapshotParams{}, err
+		}
+	}
+	if p.Quality < 1 || p.Quality > 100 {
+		return SnapshotParams{}, fmt.Errorf("quality must be 1..100")
+	}
+	return p, nil
+}
+
+func ParseSnapshotResult(raw []byte) (SnapshotResult, error) {
+	var r SnapshotResult
+	if err := decodeObject(raw, &r); err != nil {
+		return r, err
+	}
+	if !validCommandID(r.SnapshotID) || strings.TrimSpace(r.SnapshotID) != r.SnapshotID {
+		return r, fmt.Errorf("snapshot_id is required")
+	}
+	return r, nil
+}
+
 type Command struct {
 	SchemaVersion int             `json:"schema_version"`
 	CommandID     string          `json:"command_id"`
@@ -115,10 +155,27 @@ func (r CommandRequest) Validate() error {
 		if err := decodeObject(r.Params, &struct{}{}); err != nil {
 			return err
 		}
+	case "camera.snapshot":
+		_, err := ParseSnapshotParams(r.Params)
+		return err
 	default:
 		return fmt.Errorf("unsupported command type")
 	}
 	return nil
+}
+
+func (r CommandRequest) NormalizedParams() (json.RawMessage, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	if r.Type == "camera.snapshot" {
+		p, err := ParseSnapshotParams(r.Params)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(p)
+	}
+	return append(json.RawMessage(nil), r.Params...), nil
 }
 func validCommandID(id string) bool { return strings.TrimSpace(id) != "" && len(id) <= 64 }
 func ParseCommand(topic string, raw []byte) (*Command, error) {
@@ -132,9 +189,11 @@ func ParseCommand(topic string, raw []byte) (*Command, error) {
 	if !validCommandID(c.CommandID) || c.IssuedAt.IsZero() || !c.ExpiresAt.After(c.IssuedAt) {
 		return nil, fmt.Errorf("invalid command identity or timestamps")
 	}
-	if err := (CommandRequest{Type: c.Type, Params: c.Params}).Validate(); err != nil {
+	params, err := (CommandRequest{Type: c.Type, Params: c.Params}).NormalizedParams()
+	if err != nil {
 		return nil, err
 	}
+	c.Params = params
 	c.IssuedAt, c.ExpiresAt = c.IssuedAt.UTC(), c.ExpiresAt.UTC()
 	return &c, nil
 }

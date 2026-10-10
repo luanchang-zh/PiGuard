@@ -80,7 +80,8 @@ func Run(cfg *config.Config) error {
 		ConnectTimeout: cfg.MQTT.ConnectTimeout,
 	})
 	publisher := mqtt.NewPublisher(mqttClient)
-	commandSvc := service.NewCommandService(repo.NewCommandRepository(gormDB), deviceRepo, publisher, monitor.Online, hub)
+	frameSvc := service.NewFrameService(repo.NewSnapshotRepository(gormDB), deviceRepo, cfg.Storage.SnapshotDir, hub)
+	commandSvc := service.NewCommandService(repo.NewCommandRepository(gormDB), deviceRepo, publisher, monitor.Online, hub, frameSvc)
 	eventSvc := service.NewEventService(repo.NewEventRepository(gormDB), deviceRepo, hub)
 	configSvc := service.NewConfigService(configRepo, publisher, deviceRepo)
 	subscriber := mqtt.NewSubscriber(mqttClient, monitor, commandSvc, eventSvc, configSvc)
@@ -109,7 +110,7 @@ func Run(cfg *config.Config) error {
 		Events:    eventSvc,
 		Commands:  commandSvc,
 		Configs:   configSvc,
-		Frames:    service.NewFrameService(repo.NewSnapshotRepository(gormDB), deviceRepo, cfg.Storage.SnapshotDir, hub),
+		Frames:    frameSvc,
 		Hub:       hub,
 	})
 

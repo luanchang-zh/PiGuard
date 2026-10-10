@@ -85,7 +85,7 @@ func commandHTTP(t *testing.T, mode string) *commandHTTPFixture {
 	}
 	p := &simulatedCommandPublisher{executor: executor}
 	p.available.Store(true)
-	s := service.NewCommandService(repo.NewCommandRepository(g), d, p, m.Online, hub)
+	s := service.NewCommandService(repo.NewCommandRepository(g), d, p, m.Online, hub, nil)
 	p.manager = s
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)

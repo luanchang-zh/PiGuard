@@ -23,6 +23,7 @@ type FrameService interface {
 	Save(context.Context, string, protocol.FrameUpload) (protocol.FrameResult, bool, error)
 	Latest(context.Context, string) (protocol.FrameView, error)
 	Open(context.Context, string) (*os.File, error)
+	ResolveSnapshot(context.Context, string, string) (protocol.FrameView, error)
 }
 type frameService struct {
 	snapshots repo.SnapshotRepository
@@ -48,7 +49,7 @@ func frameResult(row *model.Snapshot) protocol.FrameResult {
 	return protocol.FrameResult{SnapshotID: row.SnapshotID, DeviceID: row.DeviceID, Type: row.Type, CapturedAt: row.CapturedAt.UTC()}
 }
 func frameView(row *model.Snapshot) protocol.FrameView {
-	return protocol.FrameView{SnapshotID: row.SnapshotID, Type: row.Type, CapturedAt: row.CapturedAt.UTC(), URL: "/api/v1/snapshots/" + row.SnapshotID + "/content"}
+	return protocol.FrameView{SnapshotID: row.SnapshotID, Type: row.Type, CapturedAt: row.CapturedAt.UTC(), URL: protocol.SnapshotURL(row.SnapshotID)}
 }
 func (s *frameService) retry(ctx context.Context, row *model.Snapshot, u protocol.FrameUpload, digest string) (protocol.FrameResult, bool, error) {
 	if row.Type != u.Type || !row.CapturedAt.Equal(u.CapturedAt) || row.Size != int64(len(u.JPEG)) || row.SHA256 != digest {
@@ -179,4 +180,28 @@ func (s *frameService) Open(ctx context.Context, id string) (*os.File, error) {
 		return nil, err
 	}
 	return s.openRow(row)
+}
+
+func (s *frameService) ResolveSnapshot(ctx context.Context, device, id string) (protocol.FrameView, error) {
+	row, err := s.snapshots.Find(ctx, id)
+	if errors.Is(err, repo.ErrNotFound) {
+		return protocol.FrameView{}, apperr.ErrSnapshotNotFound
+	}
+	if err != nil {
+		return protocol.FrameView{}, err
+	}
+	if row.DeviceID != device || row.Type != "snapshot" {
+		return protocol.FrameView{}, fmt.Errorf("snapshot does not belong to this device or has the wrong type")
+	}
+	if err := ctx.Err(); err != nil {
+		return protocol.FrameView{}, err
+	}
+	f, err := s.openRow(row)
+	if err != nil {
+		return protocol.FrameView{}, err
+	}
+	if err := f.Close(); err != nil {
+		return protocol.FrameView{}, err
+	}
+	return frameView(row), nil
 }

@@ -40,6 +40,7 @@ type CommandManager struct {
 	pub      Publisher
 	online   func(string) bool
 	hub      *realtime.Hub
+	frames   FrameService
 	now      func() time.Time
 	queue    chan protocol.Command
 	ctx      context.Context
@@ -48,8 +49,8 @@ type CommandManager struct {
 	workers  sync.WaitGroup
 }
 
-func NewCommandService(commands repo.CommandRepository, devices repo.DeviceRepository, pub Publisher, online func(string) bool, hub *realtime.Hub) *CommandManager {
-	return &CommandManager{commands: commands, devices: devices, pub: pub, online: online, hub: hub, now: time.Now, queue: make(chan protocol.Command, 256)}
+func NewCommandService(commands repo.CommandRepository, devices repo.DeviceRepository, pub Publisher, online func(string) bool, hub *realtime.Hub, frames FrameService) *CommandManager {
+	return &CommandManager{commands: commands, devices: devices, pub: pub, online: online, hub: hub, frames: frames, now: time.Now, queue: make(chan protocol.Command, 256)}
 }
 
 func (s *CommandManager) Start(ctx context.Context) error {
@@ -80,7 +81,8 @@ func (s *CommandManager) Close() {
 }
 
 func (s *CommandManager) Create(ctx context.Context, id string, request protocol.CommandRequest) (string, error) {
-	if err := request.Validate(); err != nil {
+	params, err := request.NormalizedParams()
+	if err != nil {
 		return "", &apperr.InvalidParams{Field: "params"}
 	}
 	s.mu.Lock()
@@ -98,7 +100,7 @@ func (s *CommandManager) Create(ctx context.Context, id string, request protocol
 		return "", apperr.ErrMQTTUnavailable
 	}
 	issued := s.now().UTC()
-	cmd := protocol.Command{SchemaVersion: 1, CommandID: "cmd-" + rand.Text(), DeviceID: id, Type: request.Type, Params: append(json.RawMessage(nil), request.Params...), IssuedAt: issued, ExpiresAt: issued.Add(10 * time.Second)}
+	cmd := protocol.Command{SchemaVersion: 1, CommandID: "cmd-" + rand.Text(), DeviceID: id, Type: request.Type, Params: params, IssuedAt: issued, ExpiresAt: issued.Add(10 * time.Second)}
 	row := &model.Command{CommandID: cmd.CommandID, DeviceID: id, Type: cmd.Type, Params: string(cmd.Params), Status: "pending", IssuedAt: issued, ExpiresAt: cmd.ExpiresAt}
 	if err := s.commands.Insert(ctx, row); err != nil {
 		return "", err
@@ -109,12 +111,18 @@ func (s *CommandManager) Create(ctx context.Context, id string, request protocol
 }
 
 func commandView(row *model.Command) *protocol.CommandView {
+	result := commandJSON(row.Result)
+	if row.Type == "camera.snapshot" && row.Status == "success" {
+		if snapshot, err := protocol.ParseSnapshotResult(result); err == nil {
+			result, _ = json.Marshal(map[string]string{"snapshot_id": snapshot.SnapshotID, "url": protocol.SnapshotURL(snapshot.SnapshotID)})
+		}
+	}
 	return &protocol.CommandView{
 		CommandID: row.CommandID, DeviceID: row.DeviceID, Type: row.Type,
 		Params: commandJSON(row.Params), Status: row.Status,
 		IssuedAt: row.IssuedAt.UTC(), ExpiresAt: row.ExpiresAt.UTC(),
 		AckAt: row.AckAt, ExecutedAt: row.ExecutedAt,
-		Result: commandJSON(row.Result), Error: commandJSON(row.Error),
+		Result: result, Error: commandJSON(row.Error),
 	}
 }
 
@@ -161,6 +169,26 @@ func (s *CommandManager) IngestAck(ctx context.Context, topic string, payload []
 	a, err := protocol.ParseCommandAck(topic, payload)
 	if err != nil {
 		return err
+	}
+	// File I/O precedes the command lock; the state and deadline are checked again below.
+	initial, err := s.commands.Find(ctx, a.CommandID)
+	if err != nil {
+		return fmt.Errorf("Ack lookup: %w", err)
+	}
+	if initial.DeviceID != a.DeviceID {
+		return fmt.Errorf("Ack belongs to a different device")
+	}
+	if initial.Type == "camera.snapshot" && a.Status == "success" && pending(initial.Status) && s.now().Before(initial.ExpiresAt) {
+		snapshot, err := protocol.ParseSnapshotResult(a.Result)
+		if err != nil {
+			return fmt.Errorf("camera Ack result: %w", err)
+		}
+		if s.frames == nil {
+			return fmt.Errorf("camera snapshot reader is not configured")
+		}
+		if _, err := s.frames.ResolveSnapshot(ctx, a.DeviceID, snapshot.SnapshotID); err != nil {
+			return fmt.Errorf("camera Ack snapshot: %w", err)
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

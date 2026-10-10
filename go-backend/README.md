@@ -1,10 +1,12 @@
 # Go 监控与控制后端
 
-在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作命令/Ack、告警事件、配置同步、JPEG 图片上传/读取与 WebSocket。
+在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警事件、配置同步、JPEG 图片上传/读取与 WebSocket。拍照功能当前为代码交付，运行验证后置。
 
 ## 软件验收
 
 当前按功能优先推进，新增功能开发只做格式、编译和代码核对。下列 test/race/vet 与真实 Broker/Docker/硬件联调集中后置；未执行的检查不视为通过。
+
+拍照尚未新增运行测试。既有协议/service/handler 测试中仍保留“不支持 camera.snapshot”的旧断言，V1 要按新增契约替换并补充有效/错误图片引用、超时、重复/迟到 Ack、上传失败/幂等重试/取消与恢复用例。本轮只调整了旧测试的构造依赖，未改断言或运行测试。
 
 ```sh
 go test -count=1 ./...
@@ -66,12 +68,36 @@ curl -X POST http://127.0.0.1:8080/api/v1/devices/car-001/commands \
 curl http://127.0.0.1:8080/api/v1/commands/返回的command_id
 ```
 
-- 四类动作：buzzer.test、indicator.test、scenario.start、scenario.stop。蜂鸣器/灯时长 100—5000ms，灯色 green/yellow/red；场景名称与播放速度遵循网络规范。摄像头/配置不走本轮命令接口。
+- 四类动作：buzzer.test、indicator.test、scenario.start、scenario.stop，另支持下述 camera.snapshot。蜂鸣器/灯时长 100—5000ms，灯色 green/yellow/red；场景名称与播放速度遵循网络规范。配置使用独立接口。
 - POST 返回 202/pending，表示已保存并异步受理；MQTT QoS 1、non-retained。Broker 确认后为 sent，设备回执决定 success/failed；10 秒内未收到有效回执则 timeout。
 - GET 和 WS command_update 使用同一 DTO，包括参数、签发/截止、平台 ack_at、设备 executed_at 和 result/error。缺少回执的时间为 null。
 - 离线设备拒绝为 503/50301；在线但发布通道不可用为 503/50302。每次有效 POST 创建新命令，没有 HTTP 重试幂等键。
 - 快速/重复/冲突/迟到 Ack 不回退终态。重启保留记录、恢复截止时间，不自动重发动作。
 - 模拟器 `-ack-mode success|failed|none` 选择结果，`-ack-delay 12s` 可模拟迟到回执；它按 command_id 缓存结果，重复投递只重发回执，不重复模拟执行。
+
+## 拍照命令（代码已完成，运行验证后置）
+
+在 Broker/后端已启动的环境中，启动软件设备，再用另一个终端创建命令：
+
+```sh
+go run ./cmd/simulator -duration 60s -api http://127.0.0.1:8080
+```
+
+```sh
+curl -X POST http://127.0.0.1:8080/api/v1/devices/car-001/commands \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"camera.snapshot","params":{"quality":80}}'
+curl http://127.0.0.1:8080/api/v1/commands/返回的command_id
+curl http://127.0.0.1:8080/api/v1/snapshots/成功结果中的snapshot_id/content -o snapshot.jpg
+```
+
+- `params` 必须为对象，quality 可以省略，缺省 80；显式值为 1—100 整数。null、额外字段、非整数和越界返回 400/40001。平台在保存/下发时补齐默认 quality。
+- 软件设备在 success 模式生成 320×180 JPEG，按 snapshot 类型上传既有 frames API，然后用服务端返回的 snapshot_id 发 Ack；这是软件图片，不是实际摄像头拍摄。`-api` 指向 HTTP 根地址，`-broker` 独立选择 MQTT 地址。
+- MQTT 回调只将命令放入有界队列，独立工作过程上传；整个上传受命令截止和进程取消约束，每次 HTTP 最多 6 秒。网络/响应读取故障、408/429/5xx 最多尝试 3 次，间隔 100ms，使用同一 frame_id、captured_at 和字节；其他拒绝不重试。上传失败发 SNAPSHOT_UPLOAD_FAILED，不编造图片 ID。failed/none 模式不上传，分别产生失败 Ack/等待超时。
+- 拍照 success Ack 的 result 严格只含 snapshot_id。平台查已提交记录，要求同设备、type=snapshot 且文件可打开；未知、跨设备、preview/event、缺文件或非法 result 不结束命令、不发 command_update，继续等有效回执或 timeout。不以设备图片时间判断 Ack 是否准时。
+- GET/command_update 的 success result 为 `{"snapshot_id":"snap-...","url":"/api/v1/snapshots/snap-.../content"}`。原设备 result 保留用于重复判断；首个终态不会被重复、冲突、迟到回执覆盖。图片上传的 frame_update 与命令状态更新分别产生，上传本身不结束命令。
+- 已提交图片不会因命令超时或迟到回执删除；之后文件缺失由 content API 返回 404，历史命令仍保留原成功事实。平台不要求同设备图片只能被一条命令引用，软件设备每条新命令仍生成一张新图。
+- 新代码仅经过格式、编译和独立代码核对；实际 HTTP→MQTT→模拟器→上传→Ack→GET/双 WS、跨平台、Broker/Docker 与真实相机证据将在 V1/V2 收集。
 
 ## 配置同步
 
@@ -112,7 +138,7 @@ curl http://127.0.0.1:8080/api/v1/snapshots/返回的snapshot_id/content -o down
 - 文件和元数据可读后，新增 snapshot/event 以及成为最新的 preview 发布一次 `frame_update`，data 包含 device_id/snapshot_id/type/captured_at/url，不含 JPEG；timestamp 为平台时间。慢客户端沿用 Hub 的有界队列与关闭策略。
 - Windows 图片存储同步 JPEG 普通文件后以不可覆盖方式发布，避免对目录句柄调用不支持的 `Sync()`；Linux 继续同步文件和发布目录。两者均保留失败补偿，硬断电恢复不超出操作系统/文件系统能力；本次代码修复的运行回归延后。
 - 已登记的离线设备及运行中 MQTT 断线均可上传，图片不更新 online、last_seen_at 或配置版本。平台初次启动仍要求 Broker 连接成功。
-- 本轮图片持久保留，没有 TTL 或删除接口；`camera.snapshot` 命令、告警引用完整闭环、鉴权和容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
+- 本轮图片持久保留，没有 TTL 或删除接口；拍照引用校验见上节，告警引用完整闭环、鉴权和容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
 
 ## 状态约定
 

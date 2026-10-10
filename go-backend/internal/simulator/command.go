@@ -2,6 +2,7 @@
 package simulator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -15,6 +16,13 @@ type CommandExecutor struct {
 	mode       string
 	results    map[string]*protocol.CommandAck
 	executions int
+	capture    func(context.Context, protocol.Command, time.Time) (json.RawMessage, error)
+}
+
+func (e *CommandExecutor) SetCameraCapture(capture func(context.Context, protocol.Command, time.Time) (json.RawMessage, error)) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.capture = capture
 }
 
 func NewCommandExecutor(mode string) (*CommandExecutor, error) {
@@ -26,6 +34,10 @@ func NewCommandExecutor(mode string) (*CommandExecutor, error) {
 
 // Execute caches even suppressed responses, so redelivery never executes twice.
 func (e *CommandExecutor) Execute(topic string, raw []byte, at time.Time) (*protocol.CommandAck, bool, error) {
+	return e.ExecuteContext(context.Background(), topic, raw, at)
+}
+
+func (e *CommandExecutor) ExecuteContext(ctx context.Context, topic string, raw []byte, at time.Time) (*protocol.CommandAck, bool, error) {
 	cmd, err := protocol.ParseCommand(topic, raw)
 	if err != nil {
 		return nil, false, err
@@ -52,6 +64,20 @@ func (e *CommandExecutor) Execute(topic string, raw []byte, at time.Time) (*prot
 	case "success":
 		ack.Status = "success"
 		ack.Result = json.RawMessage(`{"message":"simulated command completed"}`)
+		if cmd.Type == "camera.snapshot" {
+			if e.capture == nil {
+				ack.Status, ack.Result = "failed", nil
+				ack.Error = &protocol.CommandError{Code: "DEVICE_NOT_SUPPORTED", Message: "snapshot uploader is not configured"}
+			} else {
+				result, err := e.capture(ctx, *cmd, at.UTC())
+				if err != nil {
+					ack.Status, ack.Result = "failed", nil
+					ack.Error = &protocol.CommandError{Code: "SNAPSHOT_UPLOAD_FAILED", Message: err.Error()}
+				} else {
+					ack.Result = result
+				}
+			}
+		}
 	}
 	e.results[cmd.CommandID] = ack
 	return ack, true, nil

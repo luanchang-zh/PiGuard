@@ -1,12 +1,14 @@
 # Go 监控与控制后端
 
-在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警事件、配置同步、JPEG 图片上传/读取与 WebSocket。拍照功能当前为代码交付，运行验证后置。
+在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警与图片关联、配置同步、JPEG 图片上传/读取与 WebSocket。拍照和告警图片功能当前为代码交付，运行验证后置。
 
 ## 软件验收
 
 当前按功能优先推进，新增功能开发只做格式、编译和代码核对。下列 test/race/vet 与真实 Broker/Docker/硬件联调集中后置；未执行的检查不视为通过。
 
 拍照尚未新增运行测试。既有协议/service/handler 测试中仍保留“不支持 camera.snapshot”的旧断言，V1 要按新增契约替换并补充有效/错误图片引用、超时、重复/迟到 Ack、上传失败/幂等重试/取消与恢复用例。本轮只调整了旧测试的构造依赖，未改断言或运行测试。
+
+告警图片本轮只调整旧测试的构造参数、SameRecord 参数和接口占位方法，保留断言。原先“无有效图片也直接返回原 snapshot_id”的断言已不符合有效引用契约；V1 更新并补测双顺序/并发/幂等、跨设备/preview/缺文件/读取故障、取消/重启及 HTTP/双 WS。
 
 ```sh
 go test -count=1 ./...
@@ -99,6 +101,21 @@ curl http://127.0.0.1:8080/api/v1/snapshots/成功结果中的snapshot_id/conten
 - 已提交图片不会因命令超时或迟到回执删除；之后文件缺失由 content API 返回 404，历史命令仍保留原成功事实。平台不要求同设备图片只能被一条命令引用，软件设备每条新命令仍生成一张新图。
 - 新代码仅经过格式、编译和独立代码核对；实际 HTTP→MQTT→模拟器→上传→Ack→GET/双 WS、跨平台、Broker/Docker 与真实相机证据将在 V1/V2 收集。
 
+## 告警与图片（代码已完成，运行验证后置）
+
+```sh
+go run ./cmd/simulator -duration 60s -event-image -api http://127.0.0.1:8080
+curl 'http://127.0.0.1:8080/api/v1/devices/car-001/events?limit=10'
+```
+
+- 告警上行可省略图片引用，或使用互斥的 `snapshot_id` / `frame_id`。snapshot_id 是 1—64 个非空白字符；frame_id 沿用上传身份的 1—64 ASCII 字母/数字/下划线/连字符，支持先告警后图片。显式 null、非法类型、同时提供两种引用均拒绝。合法告警即使引用错误或图片未到也保存。
+- SQLite 原始引用不可变，参与 event_id 重复比较；关联结果不回写原引用，设备 snapshot_available 仅为兼容输入。重复事件不新增或推送，冲突保留首条。
+- HTTP items、WS event 与 event_image_update 一致包含 `frame_id/snapshot_id/snapshot_available/snapshot_url/snapshot_state`。frame_id 保留输入；snapshot_id 与稳定 `/api/v1/snapshots/{id}/content` URL 只有同设备、type=snapshot/event、已提交且普通文件可打开时提供，其余为 null。
+- 状态为 none（无引用）、pending（尚无图片记录）、available（可读）、invalid（跨设备/preview）、missing（有记录但缺文件）、unavailable（通知时暂时读取故障）。GET 遇到 DB/其他存储故障返回 500；告警保存后的通知解析故障仍发 event，图片为 unavailable，并记录诊断。
+- 图片先到，首次 event 即可 available；告警先到，新图片提交后发 `event_image_update`，data 只含 event_id/device_id 和图片字段，前端据 event_id 更新原告警。该通知不创建另一条告警，不重发 event；幂等上传不重复通知。新 preview 可使相关引用更新为 invalid。GET 在重启后仍从持久引用和文件解析，WS 不补推历史；外部删图后 GET 反映 missing。
+- `-event-image` 默认关闭，保留无图演示。启用后先发布两次相同内容、带稳定 frame_id 的告警，再在独立过程上传 320×180 软件 event JPEG。HTTP 使用 -api，最多三次复用相同身份/时间/字节，整体 10 秒且每次最多 6 秒，进程结束会取消并等待；失败只记录日志，不伪造图片可用。遥测、配置和拍照工作继续运行。MQTT 与 HTTP 接收顺序仍由真实网络决定，平台支持两种顺序。
+- 当前 WS 类型为 telemetry/event/event_image_update/device_status/command_update/frame_update。配置状态通过 GET 查询，没有 config_update；本轮仅格式、编译和独立代码核对，实际链路证据在 V1/V2 后续收集。
+
 ## 配置同步
 
 ```sh
@@ -138,7 +155,7 @@ curl http://127.0.0.1:8080/api/v1/snapshots/返回的snapshot_id/content -o down
 - 文件和元数据可读后，新增 snapshot/event 以及成为最新的 preview 发布一次 `frame_update`，data 包含 device_id/snapshot_id/type/captured_at/url，不含 JPEG；timestamp 为平台时间。慢客户端沿用 Hub 的有界队列与关闭策略。
 - Windows 图片存储同步 JPEG 普通文件后以不可覆盖方式发布，避免对目录句柄调用不支持的 `Sync()`；Linux 继续同步文件和发布目录。两者均保留失败补偿，硬断电恢复不超出操作系统/文件系统能力；本次代码修复的运行回归延后。
 - 已登记的离线设备及运行中 MQTT 断线均可上传，图片不更新 online、last_seen_at 或配置版本。平台初次启动仍要求 Broker 连接成功。
-- 本轮图片持久保留，没有 TTL 或删除接口；拍照引用校验见上节，告警引用完整闭环、鉴权和容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
+- 本轮图片持久保留，没有 TTL 或删除接口；拍照与告警引用校验见上节，鉴权和容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
 
 ## 状态约定
 

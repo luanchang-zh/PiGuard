@@ -149,6 +149,10 @@ func (c *countingEvents) List(context.Context, string, repo.EventQuery) ([]proto
 	return []protocol.EventItem{}, nil
 }
 
+func (c *countingEvents) FrameSaved(context.Context, string, string, string) error {
+	return nil
+}
+
 type testMessage struct {
 	topic   string
 	payload []byte

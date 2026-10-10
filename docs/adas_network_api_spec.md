@@ -452,6 +452,10 @@ Raspberry Pi -> Platform
 }
 ```
 
+可选 `snapshot_id` 或 `frame_id` 二者互斥，也可都省略。snapshot_id 为 1—64 非空白字符；frame_id 为 1—64 ASCII 字母/数字/下划线/连字符，等于同设备上传身份，用于先告警后图片。显式 null、类型错误、非法身份、同时给两种引用或未知字段均拒绝。设备 snapshot_available 只允许 bool，是兼容输入，不作为平台可读事实，也不保存或参与幂等。
+
+每条 event_id 全局唯一，保存原始 snapshot_id/frame_id；重复按设备、类型、动作、等级、时间、data JSON 语义和原引用比较，相同忽略，冲突保留首条。图片未知或引用错误仍保存合法告警；解析关联不改写原引用，不自动从 telemetry.risk 或图片上传创建告警。
+
 ---
 
 # 10. Event type
@@ -1253,6 +1257,8 @@ GET /api/v1/devices/car-001/events?type=obstacle_warning&limit=20
 
 # 34. Event Response
 
+type/level/start/end 同时筛选，时间含端点，limit 默认 100、范围 1—1000；按 timestamp DESC/event_id DESC 取窗口内最新记录。无记录 items=[]；未知设备 404/40401，非法参数 400/40001，DB/其他存储故障 500/50001。
+
 ```json
 {
   "code": 0,
@@ -1271,7 +1277,11 @@ GET /api/v1/devices/car-001/events?type=obstacle_warning&limit=20
           "speed_kmh": 32
         },
 
-        "snapshot_id": "snap-001"
+        "frame_id": "alarm-frame-001",
+        "snapshot_id": "snap-001",
+        "snapshot_available": true,
+        "snapshot_url": "/api/v1/snapshots/snap-001/content",
+        "snapshot_state": "available"
       }
     ]
   }
@@ -1279,6 +1289,10 @@ GET /api/v1/devices/car-001/events?type=obstacle_warning&limit=20
 ```
 
 ---
+
+HTTP items、WS event 和 event_image_update 使用一致的图片字段。frame_id 为原输入或 null；snapshot_id 为平台校验后的有效 ID，仅同设备、type=snapshot/event、已提交且安全普通文件可打开时提供。snapshot_url 同样只在可读时提供稳定内容 URL，其余为 null；snapshot_available 是平台计算 bool。
+
+snapshot_state 为 none（无引用）、pending（尚无已提交记录）、available（可读）、invalid（跨设备/preview 类型）、missing（有记录但缺文件）、unavailable（通知时暂时读取故障）。GET 遇到 DB/其他存储故障返回 500，不当作 pending。新告警保存后解析失败仍发 event，标记 unavailable 并记录诊断。每次 GET 重新解析持久原引用/元数据/文件，重启后仍可查询，外部删图反映 missing；不依赖内存关联表。
 
 # 35. GET /api/v1/devices/{device_id}/config
 
@@ -1537,7 +1551,7 @@ snapshot_id 由服务端生成，稳定且不可变，不暴露数据库 ID。�
 
 返回 HTTP 200、Content-Type: image/jpeg 与保存的原始字节。未知 ID 或已登记但文件缺失返回 404/40403；数据库或其他读取错误返回 500/50001。不接受任意文件路径，不使用客户端文件名/frame_id 构造路径，不泄露服务端目录。
 
-本轮不提供 PNG、视频、缩略图、重压缩、历史分页、图片删除或 TTL 清理。图片持久保留。camera.snapshot 通过有效 Ack 关联已提交 snapshot；告警图片有效关联留后续，上传 snapshot/event 本身不创建命令结果或告警。图片普通文件同步、不可覆盖发布保留；Linux 另外同步目录，Windows 避免不支持的目录 Sync。双平台运行验证后置。
+本轮不提供 PNG、视频、缩略图、重压缩、历史分页、图片删除或 TTL 清理。图片持久保留。camera.snapshot 通过有效 Ack 关联已提交 snapshot；告警按同设备原 snapshot_id/frame_id 解析可读的 snapshot/event 图片，新图片提交后通过 event_image_update 更新已有告警（见第 48 节）。上传本身不创建命令结果或新告警。图片普通文件同步、不可覆盖发布保留；Linux 另外同步目录，Windows 避免不支持的目录 Sync。当前交付代码与编译，双平台及完整链路运行验证后置。
 
 ---
 
@@ -1572,14 +1586,16 @@ telemetry
 
 event
 
+event_image_update
+
 device_status
 
 command_update
 
-config_update
-
 frame_update
 ```
+
+配置同步状态通过 GET config 查询，当前没有 config_update WS 类型。
 
 ---
 
@@ -1628,12 +1644,43 @@ frame_update
     "device_id": "car-001",
     "event_type": "obstacle_warning",
     "action": "started",
-    "level": "danger"
+    "level": "danger",
+    "timestamp": "2026-09-29T10:30:12Z",
+    "data": {"distance_m": 6.8, "speed_kmh": 32},
+    "frame_id": "alarm-frame-001",
+    "snapshot_id": null,
+    "snapshot_available": false,
+    "snapshot_url": null,
+    "snapshot_state": "pending"
   }
 }
 ```
 
 ---
+
+图片先到，首次 event 即可包含有效 ID/URL；告警先到，新图片安全提交后发送以下更新已有告警，前端按 event_id 合并图片字段，不新增另一条告警：
+
+```json
+{
+  "type": "event_image_update",
+  "timestamp": "2026-09-29T10:30:13Z",
+  "data": {
+    "event_id": "evt-001",
+    "device_id": "car-001",
+    "frame_id": "alarm-frame-001",
+    "snapshot_id": "snap-001",
+    "snapshot_available": true,
+    "snapshot_url": "/api/v1/snapshots/snap-001/content",
+    "snapshot_state": "available"
+  }
+}
+```
+
+只对新提交图按同设备原 snapshot_id/frame_id 查询相关已存告警；不重发 event，不回写引用，幂等/拒绝/冲突上传不重复通知。preview 引用可以更新为 invalid。创建和图片更新按一致次序推送，避免可读更新后收到旧 pending 创建帧；按有界批次读取，文件 I/O 不持 Monitor 锁或长 DB 事务。提交后通知故障不回滚图片/告警，由 GET 恢复；WS 不提供历史重放或持久 outbox。
+
+软件演示命令 `go run ./cmd/simulator -duration 60s -event-image -api http://127.0.0.1:8080`：默认 -event-image=false 保留无图告警，启用后先发布两次相同、带稳定 frame_id 的事件，再异步上传 event JPEG。上传复用身份/时间/字节最多 3 次，整体 10 秒、每次 HTTP 6 秒，响应进程取消，失败日志不伪造可读。真实网络接收顺序可能变化，两种顺序均支持；遥测/配置/拍照继续运行。
+
+本轮只做代码、gofmt、go build ./... 及独立代码核对；旧测试中直接返回未验证 snapshot_id 的断言保留，V1 按有效引用/新 DTO 更新并补测双顺序、并发/幂等/错误引用/存储故障/取消/重启/双 WS，再运行 test/vet/race。Broker/Docker/Python/Vue/真实摄像头与硬件在 V2 验证。
 
 # 49. WebSocket command_update
 
@@ -1688,7 +1735,7 @@ frame_update
 
 文件和元数据可读并成功提交后，新的 snapshot/event，以及成为当前 preview 的图片，发布一次通知。timestamp 为平台时间，captured_at 为设备采集时间；幂等重试、拒绝、失败和迟到旧 preview 不通知，预览通知按采集时间/同时间提交顺序保持不回退。双客户端收到一致 DTO，慢客户端沿用有界队列和关闭策略。
 
-前端收到后读取 data.url；WS 不传 JPEG 大对象。保留 telemetry/event/device_status/command_update 原有语义，不新增 config_update。
+前端收到后读取 data.url；WS 不传 JPEG 大对象。保留 telemetry/event/device_status/command_update 原有语义，告警图片关联增加 event_image_update，不新增 config_update。
 
 ---
 
@@ -2320,7 +2367,10 @@ level
 payload
 timestamp
 snapshot_id
+frame_id
 ```
+
+events 的 snapshot_id/frame_id 保存原输入并保持不可变；同 device_id 的引用索引用于有界查询。平台输出中的有效 snapshot_id、URL 和状态每次解析，不作为消息事实回写。
 
 ## commands
 

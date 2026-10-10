@@ -43,8 +43,33 @@ func (s *SnapshotClient) Capture(ctx context.Context, cmd protocol.Command, at t
 	if err != nil {
 		return nil, err
 	}
-	identity := sha256.Sum256([]byte(cmd.CommandID))
-	frameID := "cam-" + hex.EncodeToString(identity[:16])
+	result, err := s.saveJPEG(ctx, cmd.DeviceID, softwareFrameID("cam-", cmd.CommandID), cmd.CommandID, "snapshot", p.Quality, at)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(protocol.SnapshotResult{SnapshotID: result.SnapshotID})
+}
+
+func softwareFrameID(prefix, id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return prefix + hex.EncodeToString(sum[:16])
+}
+
+func EventFrameID(eventID string) string {
+	return softwareFrameID("evt-", eventID)
+}
+
+func (s *SnapshotClient) UploadEvent(ctx context.Context, device, eventID string, at time.Time) (protocol.FrameResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return s.saveJPEG(ctx, device, EventFrameID(eventID), eventID, "event", 80, at)
+}
+
+func (s *SnapshotClient) saveJPEG(ctx context.Context, device, frameID, seed, kind string, quality int, at time.Time) (protocol.FrameResult, error) {
+	if err := ctx.Err(); err != nil {
+		return protocol.FrameResult{}, err
+	}
+	identity := sha256.Sum256([]byte(seed))
 	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
 	for y := 0; y < img.Bounds().Dy(); y++ {
 		for x := 0; x < img.Bounds().Dx(); x++ {
@@ -52,47 +77,47 @@ func (s *SnapshotClient) Capture(ctx context.Context, cmd protocol.Command, at t
 		}
 	}
 	var jpegBytes bytes.Buffer
-	if err := jpeg.Encode(&jpegBytes, img, &jpeg.Options{Quality: p.Quality}); err != nil {
-		return nil, err
+	if err := jpeg.Encode(&jpegBytes, img, &jpeg.Options{Quality: quality}); err != nil {
+		return protocol.FrameResult{}, err
 	}
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	file, err := w.CreateFormFile("file", "snapshot.jpg")
 	if err != nil {
-		return nil, err
+		return protocol.FrameResult{}, err
 	}
 	if _, err := file.Write(jpegBytes.Bytes()); err != nil {
-		return nil, err
+		return protocol.FrameResult{}, err
 	}
-	for _, field := range [][2]string{{"frame_id", frameID}, {"captured_at", at.UTC().Format(time.RFC3339Nano)}, {"type", "snapshot"}} {
+	for _, field := range [][2]string{{"frame_id", frameID}, {"captured_at", at.UTC().Format(time.RFC3339Nano)}, {"type", kind}} {
 		if err := w.WriteField(field[0], field[1]); err != nil {
-			return nil, err
+			return protocol.FrameResult{}, err
 		}
 	}
 	if err := w.Close(); err != nil {
-		return nil, err
+		return protocol.FrameResult{}, err
 	}
-	endpoint := s.api + "/api/v1/devices/" + url.PathEscape(cmd.DeviceID) + "/frames"
+	endpoint := s.api + "/api/v1/devices/" + url.PathEscape(device) + "/frames"
 	// Reuse the exact body, including identity and capture time, after a lost response.
 	for attempt := 0; ; attempt++ {
-		result, retry, err := s.upload(ctx, endpoint, w.FormDataContentType(), body.Bytes(), cmd.DeviceID, at)
+		result, retry, err := s.upload(ctx, endpoint, w.FormDataContentType(), body.Bytes(), device, kind, at)
 		if err == nil {
-			return json.Marshal(protocol.SnapshotResult{SnapshotID: result.SnapshotID})
+			return result, nil
 		}
 		if !retry || attempt == 2 || ctx.Err() != nil {
-			return nil, err
+			return protocol.FrameResult{}, err
 		}
 		timer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, ctx.Err()
+			return protocol.FrameResult{}, ctx.Err()
 		case <-timer.C:
 		}
 	}
 }
 
-func (s *SnapshotClient) upload(ctx context.Context, endpoint, contentType string, body []byte, device string, at time.Time) (protocol.FrameResult, bool, error) {
+func (s *SnapshotClient) upload(ctx context.Context, endpoint, contentType string, body []byte, device, kind string, at time.Time) (protocol.FrameResult, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return protocol.FrameResult{}, false, err
@@ -120,7 +145,7 @@ func (s *SnapshotClient) upload(ctx context.Context, endpoint, contentType strin
 	if err := json.Unmarshal(raw, &response); err != nil {
 		return protocol.FrameResult{}, true, fmt.Errorf("invalid snapshot response: %w", err)
 	}
-	if response.Code == nil || *response.Code != 0 || response.Data == nil || response.Data.DeviceID != device || response.Data.Type != "snapshot" || !response.Data.CapturedAt.Equal(at) {
+	if response.Code == nil || *response.Code != 0 || response.Data == nil || response.Data.DeviceID != device || response.Data.Type != kind || !response.Data.CapturedAt.Equal(at) {
 		return protocol.FrameResult{}, false, fmt.Errorf("snapshot response has an invalid result")
 	}
 	result, err := json.Marshal(protocol.SnapshotResult{SnapshotID: response.Data.SnapshotID})

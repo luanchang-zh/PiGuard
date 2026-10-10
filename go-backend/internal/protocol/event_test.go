@@ -59,7 +59,7 @@ func TestParseEventAcceptsLifecycleAndOptionalSnapshot(t *testing.T) {
 	}
 	replay := *first
 	replay.SnapshotAvailable = nil
-	if !replay.SameRecord(first.DeviceID, first.Type, first.Action, first.Level, first.Timestamp, string(first.Data), "") {
+	if !replay.SameRecord(first.DeviceID, first.Type, first.Action, first.Level, first.Timestamp, string(first.Data), "", "") {
 		t.Fatal("snapshot flag changed identity")
 	}
 }

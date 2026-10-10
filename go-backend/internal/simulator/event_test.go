@@ -41,7 +41,7 @@ func TestPublishDemoEventRepeatsSameQoS1Message(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := protocol.ParseEvent("car/car-001/events", calls[1].raw)
-	if err != nil || first.EventID != "evt-sim-1" || !second.SameRecord(first.DeviceID, first.Type, first.Action, first.Level, first.Timestamp, string(first.Data), "") {
+	if err != nil || first.EventID != "evt-sim-1" || !second.SameRecord(first.DeviceID, first.Type, first.Action, first.Level, first.Timestamp, string(first.Data), "", "") {
 		t.Fatal(second, err)
 	}
 }

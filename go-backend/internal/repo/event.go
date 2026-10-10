@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"piguard/go-backend/internal/model"
@@ -25,6 +26,7 @@ type EventRepository interface {
 	Insert(context.Context, *model.Event) error
 	Find(context.Context, string) (*model.Event, error)
 	List(context.Context, string, EventQuery) ([]model.Event, error)
+	ImageReferences(context.Context, string, string, string, uint, int) ([]model.Event, error)
 }
 
 type eventRepo struct{ db *gorm.DB }
@@ -75,4 +77,20 @@ func (r *eventRepo) List(ctx context.Context, deviceID string, query EventQuery)
 
 func DuplicateEvent(err error) bool {
 	return errors.Is(err, ErrDuplicate)
+}
+
+// ImageReferences pages through immutable references, without loading all history.
+func (r *eventRepo) ImageReferences(ctx context.Context, device, snapshotID, frameID string, afterID uint, limit int) ([]model.Event, error) {
+	if limit < 1 || limit > 64 {
+		return nil, fmt.Errorf("invalid image reference batch size")
+	}
+	q := r.db.WithContext(ctx).Where("device_id = ? AND id > ?", device, afterID)
+	if frameID == "" {
+		q = q.Where("snapshot_id = ?", snapshotID)
+	} else {
+		q = q.Where("(snapshot_id = ? OR frame_id = ?)", snapshotID, frameID)
+	}
+	rows := []model.Event{}
+	err := q.Order("id ASC").Limit(limit).Find(&rows).Error
+	return rows, err
 }

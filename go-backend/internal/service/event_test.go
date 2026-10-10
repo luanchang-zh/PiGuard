@@ -44,7 +44,7 @@ func TestEventDoesNotDeriveFromTelemetryOrChangeDevice(t *testing.T) {
 		t.Fatal(before, err)
 	}
 	seen := *before.LastSeenAt
-	events := NewEventService(repo.NewEventRepository(g), devices, hub)
+	events := NewEventService(repo.NewEventRepository(g), devices, hub, nil)
 	raw := []byte(`{"schema_version":1,"event_id":"evt-offline","device_id":"car-001","type":"sensor_failure","action":"started","level":"warning","timestamp":"2026-10-08T12:00:00Z","data":{"sensor":"distance","reason":"timeout"}}`)
 	if err := events.Ingest(ctx, "car/missing/events", raw); err == nil {
 		t.Fatal("accepted unknown device")
@@ -76,7 +76,7 @@ func TestEventDuplicateInsertBroadcastsOnce(t *testing.T) {
 	hub := realtime.NewHub(8)
 	t.Cleanup(hub.Close)
 	sub := hub.Subscribe()
-	events := NewEventService(repo.NewEventRepository(g), devices, hub)
+	events := NewEventService(repo.NewEventRepository(g), devices, hub, nil)
 	raw := []byte(`{"schema_version":1,"event_id":"evt-race","device_id":"car-001","type":"sharp_turn","action":"level_changed","level":"danger","timestamp":"2026-10-08T12:00:00Z","data":{}}`)
 	var wg sync.WaitGroup
 	for range 8 {
@@ -117,7 +117,7 @@ func TestEventListBreaksTimestampTiesByID(t *testing.T) {
 	if err := devices.Insert(ctx, &model.Device{DeviceID: "car-001", Name: "Demo", Mode: "mock", SoftwareVersion: "0.1.0"}); err != nil {
 		t.Fatal(err)
 	}
-	events := NewEventService(repo.NewEventRepository(g), devices, nil)
+	events := NewEventService(repo.NewEventRepository(g), devices, nil, nil)
 	for _, id := range []string{"evt-a", "evt-b"} {
 		raw := []byte(`{"schema_version":1,"event_id":"` + id + `","device_id":"car-001","type":"sharp_turn","action":"started","level":"warning","timestamp":"2026-10-08T12:00:00Z","data":{}}`)
 		if err := events.Ingest(ctx, "car/car-001/events", raw); err != nil {
@@ -134,7 +134,7 @@ func TestEventInsertFailureDoesNotBroadcast(t *testing.T) {
 	hub := realtime.NewHub(1)
 	t.Cleanup(hub.Close)
 	sub := hub.Subscribe()
-	events := NewEventService(failEvents{}, deviceFinder{}, hub)
+	events := NewEventService(failEvents{}, deviceFinder{}, hub, nil)
 	err := events.Ingest(context.Background(), "car/car-001/events", []byte(`{"schema_version":1,"event_id":"evt-1","device_id":"car-001","type":"obstacle_warning","action":"started","level":"warning","timestamp":"2026-10-08T12:00:00Z","data":{}}`))
 	if err == nil || err.Error() != "disk full" {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestSlowEventClientDoesNotBlockIngest(t *testing.T) {
 	hub := realtime.NewHub(1)
 	t.Cleanup(hub.Close)
 	slow, fast := hub.Subscribe(), hub.Subscribe()
-	events := NewEventService(repo.NewEventRepository(g), devices, hub)
+	events := NewEventService(repo.NewEventRepository(g), devices, hub, nil)
 	base := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	for i := 0; i < 20; i++ {
 		id := "evt-" + base.Add(time.Duration(i)*time.Second).Format("150405")
@@ -201,5 +201,9 @@ func (failEvents) Find(context.Context, string) (*model.Event, error) {
 	return nil, errors.New("unused")
 }
 func (failEvents) List(context.Context, string, repo.EventQuery) ([]model.Event, error) {
+	return nil, nil
+}
+
+func (failEvents) ImageReferences(context.Context, string, string, string, uint, int) ([]model.Event, error) {
 	return nil, nil
 }

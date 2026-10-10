@@ -25,19 +25,20 @@ func main() {
 	ackDelay := flag.Duration("ack-delay", 0, "回执延迟，用于验证迟到和超时")
 	configMode := flag.String("config-ack-mode", "success", "配置回执模式: success/failed/none")
 	configDelay := flag.Duration("config-ack-delay", 0, "配置回执延迟")
-	api := flag.String("api", "http://127.0.0.1:8080", "拍照上传的后端 HTTP 根地址")
+	api := flag.String("api", "http://127.0.0.1:8080", "图片上传的后端 HTTP 根地址")
+	eventImage := flag.Bool("event-image", false, "先发带 frame_id 的告警，再上传软件 event JPEG")
 	flag.Parse()
 	if *duration <= 0 || *ackDelay < 0 || *configDelay < 0 {
 		fmt.Fprintln(os.Stderr, "duration must be positive")
 		os.Exit(1)
 	}
-	if err := run(*broker, *device, *duration, *ackMode, *ackDelay, *configMode, *configDelay, *api); err != nil {
+	if err := run(*broker, *device, *duration, *ackMode, *ackDelay, *configMode, *configDelay, *api, *eventImage); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration, configMode string, configDelay time.Duration, api string) error {
+func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration, configMode string, configDelay time.Duration, api string, eventImage bool) error {
 	executor, err := simulator.NewCommandExecutor(ackMode)
 	if err != nil {
 		return err
@@ -147,12 +148,16 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 			}
 		}
 	}()
+	var eventImageDone chan struct{}
 	onlinePublished := false
 	defer func() {
 		stop()
 		cancelAcks()
 		<-commandDone
 		<-ackDone
+		if eventImageDone != nil {
+			<-eventImageDone
+		}
 		if onlinePublished {
 			_ = publish("status", map[string]any{"schema_version": 1, "device_id": id, "online": false, "reason": "simulator_stopped"}, 1, true)
 		}
@@ -198,7 +203,19 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 		return err
 	}
 	onlinePublished = true
-	if err := simulator.PublishDemoEvent(publish, id, fmt.Sprintf("evt-sim-%d", time.Now().UnixNano()), time.Now().UTC()); err != nil {
+	eventID, eventAt := fmt.Sprintf("evt-sim-%d", time.Now().UnixNano()), time.Now().UTC()
+	if eventImage {
+		if err := simulator.PublishDemoImageEvent(publish, id, eventID, eventAt); err != nil {
+			return err
+		}
+		eventImageDone = make(chan struct{})
+		go func() {
+			defer close(eventImageDone)
+			if _, err := snapshots.UploadEvent(ackCtx, id, eventID, eventAt); err != nil {
+				fmt.Fprintln(os.Stderr, "告警图片上传失败:", err)
+			}
+		}()
+	} else if err := simulator.PublishDemoEvent(publish, id, eventID, eventAt); err != nil {
 		return err
 	}
 	timer := time.NewTimer(duration)

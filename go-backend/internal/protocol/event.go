@@ -21,30 +21,46 @@ type Event struct {
 	Timestamp         time.Time       `json:"timestamp"`
 	Data              json.RawMessage `json:"data"`
 	SnapshotID        *string         `json:"snapshot_id,omitempty"`
+	FrameID           *string         `json:"frame_id,omitempty"`
 	SnapshotAvailable *bool           `json:"snapshot_available,omitempty"`
+}
+
+// EventImage 是平台按持久引用计算的图片视图。
+type EventImage struct {
+	FrameID           *string `json:"frame_id"`
+	SnapshotID        *string `json:"snapshot_id"`
+	SnapshotAvailable bool    `json:"snapshot_available"`
+	SnapshotURL       *string `json:"snapshot_url"`
+	SnapshotState     string  `json:"snapshot_state"`
+}
+
+type EventImageUpdate struct {
+	EventID  string `json:"event_id"`
+	DeviceID string `json:"device_id"`
+	EventImage
 }
 
 // EventItem 是 HTTP 告警列表中的一条记录。
 type EventItem struct {
-	EventID    string          `json:"event_id"`
-	Type       string          `json:"type"`
-	Action     string          `json:"action"`
-	Level      string          `json:"level"`
-	Timestamp  time.Time       `json:"timestamp"`
-	Data       json.RawMessage `json:"data"`
-	SnapshotID *string         `json:"snapshot_id"`
+	EventID   string          `json:"event_id"`
+	Type      string          `json:"type"`
+	Action    string          `json:"action"`
+	Level     string          `json:"level"`
+	Timestamp time.Time       `json:"timestamp"`
+	Data      json.RawMessage `json:"data"`
+	EventImage
 }
 
 // EventPush 是 WebSocket event 的 data。类型字段沿用规范里的 event_type。
 type EventPush struct {
-	EventID    string          `json:"event_id"`
-	DeviceID   string          `json:"device_id"`
-	EventType  string          `json:"event_type"`
-	Action     string          `json:"action"`
-	Level      string          `json:"level"`
-	Timestamp  time.Time       `json:"timestamp"`
-	Data       json.RawMessage `json:"data"`
-	SnapshotID *string         `json:"snapshot_id"`
+	EventID   string          `json:"event_id"`
+	DeviceID  string          `json:"device_id"`
+	EventType string          `json:"event_type"`
+	Action    string          `json:"action"`
+	Level     string          `json:"level"`
+	Timestamp time.Time       `json:"timestamp"`
+	Data      json.RawMessage `json:"data"`
+	EventImage
 }
 
 type rawEvent struct {
@@ -57,6 +73,7 @@ type rawEvent struct {
 	Timestamp         time.Time       `json:"timestamp"`
 	Data              json.RawMessage `json:"data"`
 	SnapshotID        json.RawMessage `json:"snapshot_id"`
+	FrameID           json.RawMessage `json:"frame_id"`
 	SnapshotAvailable json.RawMessage `json:"snapshot_available"`
 }
 
@@ -87,9 +104,19 @@ func ParseEvent(topic string, raw []byte) (*Event, error) {
 	if !validToken(in.EventID) || !ValidEventType(in.Type) || !ValidEventAction(in.Action) || !ValidEventLevel(in.Level) || in.Timestamp.IsZero() || !jsonObject(in.Data) {
 		return nil, fmt.Errorf("invalid event fields")
 	}
-	snapshot, err := optionalToken(in.SnapshotID)
+	snapshot, err := optionalToken(in.SnapshotID, "snapshot_id")
 	if err != nil {
 		return nil, err
+	}
+	frame, err := optionalToken(in.FrameID, "frame_id")
+	if err != nil {
+		return nil, err
+	}
+	if frame != nil && !frameIdentity.MatchString(*frame) {
+		return nil, fmt.Errorf("invalid frame_id")
+	}
+	if snapshot != nil && frame != nil {
+		return nil, fmt.Errorf("snapshot_id and frame_id are mutually exclusive")
 	}
 	available, err := optionalBool(in.SnapshotAvailable)
 	if err != nil {
@@ -98,20 +125,20 @@ func ParseEvent(topic string, raw []byte) (*Event, error) {
 	return &Event{
 		SchemaVersion: in.SchemaVersion, EventID: in.EventID, DeviceID: in.DeviceID,
 		Type: in.Type, Action: in.Action, Level: in.Level, Timestamp: in.Timestamp.UTC(),
-		Data: append(json.RawMessage(nil), bytes.TrimSpace(in.Data)...), SnapshotID: snapshot, SnapshotAvailable: available,
+		Data: append(json.RawMessage(nil), bytes.TrimSpace(in.Data)...), SnapshotID: snapshot, FrameID: frame, SnapshotAvailable: available,
 	}, nil
 }
 
-func optionalToken(raw json.RawMessage) (*string, error) {
+func optionalToken(raw json.RawMessage, field string) (*string, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, nil
 	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return nil, fmt.Errorf("snapshot_id cannot be null")
+		return nil, fmt.Errorf("%s cannot be null", field)
 	}
 	var id string
 	if err := json.Unmarshal(raw, &id); err != nil || !validToken(id) {
-		return nil, fmt.Errorf("invalid snapshot_id")
+		return nil, fmt.Errorf("invalid %s", field)
 	}
 	return &id, nil
 }
@@ -132,13 +159,17 @@ func optionalBool(raw json.RawMessage) (*bool, error) {
 
 // SameRecord reports whether this message is a replay of an already stored row.
 // snapshot_available is intentionally ignored.
-func (e Event) SameRecord(deviceID, eventType, action, level string, at time.Time, data, snapshotID string) bool {
+func (e Event) SameRecord(deviceID, eventType, action, level string, at time.Time, data, snapshotID, frameID string) bool {
 	current := ""
 	if e.SnapshotID != nil {
 		current = *e.SnapshotID
 	}
+	frame := ""
+	if e.FrameID != nil {
+		frame = *e.FrameID
+	}
 	return e.DeviceID == deviceID && e.Type == eventType && e.Action == action && e.Level == level &&
-		e.Timestamp.UTC().Equal(at.UTC()) && current == snapshotID && jsonEqual(e.Data, []byte(data))
+		e.Timestamp.UTC().Equal(at.UTC()) && current == snapshotID && frame == frameID && jsonEqual(e.Data, []byte(data))
 }
 
 func jsonEqual(left, right []byte) bool {

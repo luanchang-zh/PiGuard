@@ -24,6 +24,8 @@ type FrameService interface {
 	Latest(context.Context, string) (protocol.FrameView, error)
 	Open(context.Context, string) (*os.File, error)
 	ResolveSnapshot(context.Context, string, string) (protocol.FrameView, error)
+	ResolveEventImage(context.Context, string, string, string) (protocol.EventImage, error)
+	SetEventNotifier(func(context.Context, string, string, string) error)
 }
 type frameService struct {
 	snapshots repo.SnapshotRepository
@@ -32,11 +34,17 @@ type frameService struct {
 	hub       *realtime.Hub
 	now       func() time.Time
 	// Only short DB acceptance and ordered publication are serialized.
-	commit chan struct{}
+	commit        chan struct{}
+	eventNotifier func(context.Context, string, string, string) error
 }
 
 func NewFrameService(snapshots repo.SnapshotRepository, devices repo.DeviceRepository, dir string, hub *realtime.Hub) FrameService {
 	return &frameService{snapshots: snapshots, devices: devices, store: diskFrameStore{dir}, hub: hub, now: time.Now, commit: make(chan struct{}, 1)}
+}
+
+// SetEventNotifier wires event notification before the server starts accepting uploads.
+func (s *frameService) SetEventNotifier(notify func(context.Context, string, string, string) error) {
+	s.eventNotifier = notify
 }
 func (s *frameService) device(ctx context.Context, device string) error {
 	_, err := s.devices.Find(ctx, device)
@@ -140,6 +148,13 @@ func (s *frameService) Save(ctx context.Context, device string, u protocol.Frame
 	if s.hub != nil && (row.Type != "preview" || latest) {
 		s.hub.Publish("frame_update", protocol.FramePush{FrameView: frameView(row), DeviceID: device}, s.now().UTC())
 	}
+	<-s.commit
+	locked = false
+	if s.eventNotifier != nil {
+		if err := s.eventNotifier(ctx, device, row.SnapshotID, u.FrameID); err != nil {
+			slog.Error("已提交图片的告警通知失败", "snapshot_id", row.SnapshotID, "err", err)
+		}
+	}
 	return frameResult(row), true, nil
 }
 func (s *frameService) Latest(ctx context.Context, device string) (protocol.FrameView, error) {
@@ -204,4 +219,48 @@ func (s *frameService) ResolveSnapshot(ctx context.Context, device, id string) (
 		return protocol.FrameView{}, err
 	}
 	return frameView(row), nil
+}
+
+func (s *frameService) ResolveEventImage(ctx context.Context, device, snapshotID, frameID string) (protocol.EventImage, error) {
+	view := protocol.EventImage{FrameID: snapshotPtr(frameID), SnapshotState: "none"}
+	if snapshotID == "" && frameID == "" {
+		return view, nil
+	}
+	view.SnapshotState = "unavailable"
+	var row *model.Snapshot
+	var err error
+	if snapshotID != "" {
+		row, err = s.snapshots.Find(ctx, snapshotID)
+	} else {
+		row, err = s.snapshots.FindFrame(ctx, device, frameID)
+	}
+	if errors.Is(err, repo.ErrNotFound) {
+		view.SnapshotState = "pending"
+		return view, nil
+	}
+	if err != nil {
+		return view, err
+	}
+	if row.DeviceID != device || (row.Type != "snapshot" && row.Type != "event") {
+		view.SnapshotState = "invalid"
+		return view, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return view, err
+	}
+	f, err := s.openRow(row)
+	if errors.Is(err, apperr.ErrSnapshotNotFound) {
+		view.SnapshotState = "missing"
+		return view, nil
+	}
+	if err != nil {
+		return view, err
+	}
+	if err := f.Close(); err != nil {
+		return view, err
+	}
+	url := protocol.SnapshotURL(row.SnapshotID)
+	view.SnapshotID, view.SnapshotURL = snapshotPtr(row.SnapshotID), &url
+	view.SnapshotAvailable, view.SnapshotState = true, "available"
+	return view, nil
 }

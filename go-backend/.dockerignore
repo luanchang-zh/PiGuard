@@ -1,3 +1,6 @@
-data
-*.db
 .git
+.env
+data
+deploy/generated-auth
+*.db
+server

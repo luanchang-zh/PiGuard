@@ -61,7 +61,7 @@ func (f *eventFixture) open(t *testing.T) {
 	}
 	f.events = service.NewEventService(repo.NewEventRepository(g), f.devices, f.hub, nil)
 	sql, _ := g.DB()
-	f.server = httptest.NewServer(NewEngine(Dependencies{
+	f.server = httptest.NewServer(NewEngine(Dependencies{Auth: disabledTestAuth(t),
 		Ping: sql.PingContext, Devices: devices, Telemetry: service.NewTelemetryService(repo.NewTelemetryRepository(g), f.devices),
 		Events: f.events, Hub: f.hub, Frames: service.NewFrameService(repo.NewSnapshotRepository(g), f.devices, t.TempDir(), f.hub),
 	}))

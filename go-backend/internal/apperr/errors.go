@@ -8,7 +8,10 @@ const (
 	// CodeOK 表示业务成功。HTTP 状态另行返回。
 	CodeOK = 0
 	// CodeInvalidParams 表示请求字段缺失或超出取值范围。
-	CodeInvalidParams = 40001
+	CodeInvalidParams   = 40001
+	CodeUnauthorized    = 40101
+	CodeForbidden       = 40301
+	CodeSessionCapacity = 50303
 	// CodeDeviceNotFound 表示 device_id 在平台上不存在。
 	CodeDeviceNotFound = 40401
 	// CodeCommandNotFound 表示 command_id 不存在。

@@ -14,6 +14,13 @@
 #   PIGUARD_SEED_SOFTWARE_VERSION
 http:
   addr: 127.0.0.1:8080
+  auth:
+    disabled: false
+    platform_username: platform
+    platform_password: ""
+    device_passwords: {}
+    session_ttl_minutes: 30
+    allowed_origins: []
 
 mqtt:
   broker: tcp://127.0.0.1:1883

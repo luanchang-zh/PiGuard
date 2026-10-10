@@ -78,7 +78,7 @@ func configHTTPFixture(t *testing.T, mode string) (*httptest.Server, *service.Co
 	t.Cleanup(s.Close)
 	hub := realtime.NewHub(32)
 	t.Cleanup(hub.Close)
-	server := httptest.NewServer(NewEngine(Dependencies{Configs: s, Devices: devices, Hub: hub}))
+	server := httptest.NewServer(NewEngine(Dependencies{Auth: disabledTestAuth(t), Configs: s, Devices: devices, Hub: hub}))
 	t.Cleanup(server.Close)
 	return server, s, p, d
 }

@@ -91,7 +91,7 @@ func commandHTTP(t *testing.T, mode string) *commandHTTPFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	srv := httptest.NewServer(NewEngine(Dependencies{Ping: sql.PingContext, Devices: devices, Telemetry: service.NewTelemetryService(h, d), Commands: s, Hub: hub}))
+	srv := httptest.NewServer(NewEngine(Dependencies{Auth: disabledTestAuth(t), Ping: sql.PingContext, Devices: devices, Telemetry: service.NewTelemetryService(h, d), Commands: s, Hub: hub}))
 	t.Cleanup(srv.Close)
 	return &commandHTTPFixture{server: srv, database: g, monitor: m, publisher: p}
 }

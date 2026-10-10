@@ -1806,6 +1806,12 @@ OK
 40001
 INVALID_PARAMS
 
+40101
+UNAUTHORIZED
+
+40301
+FORBIDDEN
+
 40401
 DEVICE_NOT_FOUND
 
@@ -1829,6 +1835,9 @@ DEVICE_OFFLINE
 
 50302
 MQTT_UNAVAILABLE
+
+50303
+SESSION_CAPACITY
 
 50001
 INTERNAL_ERROR
@@ -2045,17 +2054,15 @@ executed_at
 
 ---
 
-# 61. 安全建议
+# 61. 认证接入
 
-课设阶段最低实现：
+Go 默认开启 HTTP Basic/浏览器会话与认证 Broker，无默认密码。第 27—44 节业务 HTTP API 先检查 Origin，再认证授权；health 与合法 OPTIONS 预检公开。平台 Basic 或 Cookie 可访问业务 API/WS/图片，设备 Basic 仅可 POST 自己的 frames（用户名=device_id），不能跨设备、查询、控制、配置、读图或建立 WS；凭据不注册设备。缺失/错误/失效身份 401/40101，有效身份越权或非法 Origin/CSRF 为 403/40301；显式 Authorization 错误不能回退 Cookie。拒绝发生在数据库/文件/MQTT/Hub 副作用之前，响应 no-store；授权后保留既有业务错误和 DTO。
 
-```text
-MQTT username/password
+POST /api/v1/auth/session 仅平台 Basic，201/code0 返回 expires_at/csrf_token，设置随机 HttpOnly、host-only、Path=/api/v1、SameSite=Strict Cookie；直接 HTTPS 才 Secure。GET 返回 username/role/auth_mode 及当前有效会话字段；Basic 未携会话时到期/CSRF 为 null，不创建会话。DELETE 撤销所携会话、清 Cookie，204。设备不能使用这些接口。会话默认 30 分钟、可配置 1—1440、固定到期，最多 1024；满容量 503/50303。到期/退出/重启失效并关闭关联 WS；WS 同时最多 128，容量拒绝 503/50001。无注册/找回密码/JWT/SSO 或持久会话。
 
-HTTP 基本鉴权
+Vue 与 API 使用同 IP/域名、同 scheme、不同端口，真实 origin 通过 http.auth.allowed_origins / PIGUARD_HTTP_ALLOWED_ORIGINS 的 JSON 数组配置，默认仅后端同源。HTTP/WS 共用精确来源判断；拒绝 */null/非法/多个/未知 Origin，CLI 无 Origin 仍须认证授权，不信任任意 X-Forwarded-*。许可 CORS 回显来源、Allow-Credentials=true、正确 Vary；合法 OPTIONS 204，允许 GET/POST/PUT/DELETE 与 Authorization/Content-Type/X-CSRF-Token，不调用业务。Cookie 写请求带 X-CSRF-Token（包括命令、配置、平台上传、退出）；Basic 无需 CSRF，仍检查 Origin。浏览器 fetch 用 credentials:include，WS/图片携 Cookie，稳定 URL 不附凭据。跨站 Cookie/TLS/公网代理不在本轮。
 
-设备只能访问自己的 Topic
-```
+配置/Compose 缺少平台、seed 设备凭据或非法身份/配对/TTL/origin 时在外部初始化之前失败；显式 http.auth.disabled 仅允许 loopback 开发，会话接口不注册，来源保护仍在。MQTT 默认禁匿名，平台/设备/健康身份互不冲突。具体 .env、初始化、原生 Go/Compose、curl、设备上传、浏览器登录/退出、模拟器独立 MQTT/HTTP 参数与轮换步骤见 [Go README](../go-backend/README.md)。以下请求 Body 和业务信封例子承接本节认证前置，401/403 不执行后续业务。
 
 Mosquitto ACL：
 
@@ -2071,6 +2078,7 @@ car/car-001/telemetry
 car/car-001/events
 car/car-001/status
 car/car-001/command-acks
+car/car-001/config-acks
 
 subscribe:
 car/car-001/commands
@@ -2080,6 +2088,8 @@ car/car-001/config
 ---
 
 # 62. 平台 MQTT 权限
+
+使用显式 user ACL，默认拒绝，不使用给所有角色生效的全局 %u 模式。平台只能读五类上行、写两类下行；设备只能写自己的五类上行、读自己的 commands/config，status 包括离线遗嘱；健康仅可读 $SYS/broker/uptime，无业务读写权限。订阅申请结果与实际消息授权分开判断，不承诺不同 Broker 相同 SUBACK 拒绝表述。认证失败不能算就绪；原 QoS、retained、五类重连订阅和 SQLite 配置补发保持。
 
 Go 平台允许：
 
@@ -2150,6 +2160,8 @@ JPEG Quality：
 ```http
 POST /api/v1/devices/car-001/commands
 Content-Type: application/json
+Cookie: piguard_session=<平台登录Cookie，由浏览器携带>
+X-CSRF-Token: <当前会话csrf_token>
 ```
 
 Body：
@@ -2229,6 +2241,9 @@ Ack：
 
 ```http
 PUT /api/v1/devices/car-001/config
+Content-Type: application/json
+Cookie: piguard_session=<平台登录Cookie，由浏览器携带>
+X-CSRF-Token: <当前会话csrf_token>
 ```
 
 Body：
@@ -2279,6 +2294,9 @@ Vue：
 
 ```http
 POST /api/v1/devices/car-001/commands
+Content-Type: application/json
+Cookie: piguard_session=<平台登录Cookie，由浏览器携带>
+X-CSRF-Token: <当前会话csrf_token>
 ```
 
 ```json
@@ -2304,6 +2322,7 @@ Frame API：
 
 ```http
 POST /api/v1/devices/car-001/frames
+Authorization: Basic <car-001与其HTTP密码编码，不放URL>
 ```
 
 然后 Ack：
@@ -2322,7 +2341,7 @@ POST /api/v1/devices/car-001/frames
 }
 ```
 
-本阶段软件模拟器使用 `go run ./cmd/simulator -duration 60s -api http://127.0.0.1:8080`，按 quality 生成 320×180 JPEG 后上传 snapshot。命令工作队列与上传独立于 MQTT 回调；同 command_id 重投递只重发缓存结果。上传响应丢失或临时故障最多 3 次同身份/时间/字节重试，受 10 秒命令截止和进程取消约束，失败返回 SNAPSHOT_UPLOAD_FAILED；failed/none 模式不上传。实际 CameraSource.read 仍由 Python/树莓派后续接入。
+先按 Go README 导出 PIGUARD_SIM_MQTT_USERNAME/PASSWORD 与 PIGUARD_SIM_HTTP_USERNAME/PASSWORD 两组设备凭据，再使用 `go run ./cmd/simulator -duration 60s -api http://127.0.0.1:8080`，按 quality 生成 320×180 JPEG 后上传 snapshot。命令工作队列与上传独立于 MQTT 回调；同 command_id 重投递只重发缓存结果。上传响应丢失或临时故障最多 3 次同身份/时间/字节重试，受 10 秒命令截止和进程取消约束，失败返回 SNAPSHOT_UPLOAD_FAILED；failed/none 模式不上传。实际 CameraSource.read 仍由 Python/树莓派后续接入。
 
 当前仅交付代码、编译及独立代码核对；测试/test/vet/race、完整软件链路与实际 Broker/Docker/摄像头/硬件运行验证集中在后续 V1/V2，不将示例当作已运行证据。
 

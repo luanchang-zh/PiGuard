@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"piguard/go-backend/internal/auth"
 	"piguard/go-backend/internal/config"
 	"piguard/go-backend/internal/db"
 	"piguard/go-backend/internal/handler"
@@ -27,6 +28,14 @@ import (
 // 顺序是：准备截图目录、打开数据库并建表、写入演示设备、连接 Mosquitto、监听 HTTP。
 // 连接 Broker 失败会返回错误，进程随之退出，避免没有消息通道时看起来仍在正常服务。
 func Run(cfg *config.Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	access, err := auth.New(cfg.HTTP.Auth, cfg.HTTP.Addr)
+	if err != nil {
+		return err
+	}
+	defer access.Close()
 	if err := os.MkdirAll(cfg.Storage.SnapshotDir, 0o755); err != nil {
 		return fmt.Errorf("创建截图目录: %w", err)
 	}
@@ -113,6 +122,7 @@ func Run(cfg *config.Config) error {
 		Configs:   configSvc,
 		Frames:    frameSvc,
 		Hub:       hub,
+		Auth:      access,
 	})
 
 	httpServer := &http.Server{
@@ -144,6 +154,7 @@ func Run(cfg *config.Config) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	hub.Close()
+	access.Close()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("关闭 HTTP 服务: %w", err)
 	}

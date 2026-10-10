@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	paho "github.com/eclipse/paho.mqtt.golang"
+	"net/url"
 	"os"
 	"os/signal"
 	"piguard/go-backend/internal/protocol"
@@ -27,18 +28,41 @@ func main() {
 	configDelay := flag.Duration("config-ack-delay", 0, "配置回执延迟")
 	api := flag.String("api", "http://127.0.0.1:8080", "图片上传的后端 HTTP 根地址")
 	eventImage := flag.Bool("event-image", false, "先发带 frame_id 的告警，再上传软件 event JPEG")
+	mqttUser := flag.String("mqtt-username", os.Getenv("PIGUARD_SIM_MQTT_USERNAME"), "设备 MQTT 用户名（等于 device）")
+	mqttPassword := flag.String("mqtt-password", "", "设备 MQTT 密码，推荐环境变量")
+	httpUser := flag.String("http-username", os.Getenv("PIGUARD_SIM_HTTP_USERNAME"), "设备 HTTP 用户名（等于 device）")
+	httpPassword := flag.String("http-password", "", "设备 HTTP 密码，推荐环境变量")
+	allowAnonymous := flag.Bool("allow-anonymous", false, "显式使用本地开发 HTTP /自备匿名 Broker；正式部署禁止")
 	flag.Parse()
+	provided := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { provided[f.Name] = true })
+	if !provided["mqtt-password"] {
+		*mqttPassword = os.Getenv("PIGUARD_SIM_MQTT_PASSWORD")
+	}
+	if !provided["http-password"] {
+		*httpPassword = os.Getenv("PIGUARD_SIM_HTTP_PASSWORD")
+	}
 	if *duration <= 0 || *ackDelay < 0 || *configDelay < 0 {
 		fmt.Fprintln(os.Stderr, "duration must be positive")
 		os.Exit(1)
 	}
-	if err := run(*broker, *device, *duration, *ackMode, *ackDelay, *configMode, *configDelay, *api, *eventImage); err != nil {
+	if err := run(*broker, *device, *duration, *ackMode, *ackDelay, *configMode, *configDelay, *api, *eventImage, simulator.Credentials{Username: *mqttUser, Password: *mqttPassword}, simulator.Credentials{Username: *httpUser, Password: *httpPassword}, *allowAnonymous); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration, configMode string, configDelay time.Duration, api string, eventImage bool) error {
+func run(broker, id string, duration time.Duration, ackMode string, ackDelay time.Duration, configMode string, configDelay time.Duration, api string, eventImage bool, mqttCredentials, httpCredentials simulator.Credentials, allowAnonymous bool) error {
+	u, err := url.Parse(broker)
+	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "tcp" && u.Scheme != "ssl" && u.Scheme != "ws" && u.Scheme != "wss") {
+		return fmt.Errorf("broker 必须为不含凭据的 MQTT 地址")
+	}
+	if err := mqttCredentials.Validate(id, allowAnonymous); err != nil {
+		return fmt.Errorf("MQTT: %w", err)
+	}
+	if err := httpCredentials.Validate(id, allowAnonymous); err != nil {
+		return fmt.Errorf("HTTP: %w", err)
+	}
 	executor, err := simulator.NewCommandExecutor(ackMode)
 	if err != nil {
 		return err
@@ -48,12 +72,18 @@ func run(broker, id string, duration time.Duration, ackMode string, ackDelay tim
 		return err
 	}
 	executor.SetCameraCapture(snapshots.Capture)
+	if err := snapshots.SetCredentials(id, httpCredentials, allowAnonymous); err != nil {
+		return err
+	}
 	configExecutor, err := simulator.NewConfigExecutor(configMode)
 	if err != nil {
 		return err
 	}
 	will := fmt.Sprintf(`{"schema_version":1,"device_id":%q,"online":false,"reason":"connection_lost"}`, id)
 	opts := paho.NewClientOptions().AddBroker(broker).SetClientID(fmt.Sprintf("mock-%s-%d", id, time.Now().UnixNano())).SetConnectTimeout(3*time.Second).SetWill("car/"+id+"/status", will, 1, true)
+	if mqttCredentials.Username != "" {
+		opts.SetUsername(mqttCredentials.Username).SetPassword(mqttCredentials.Password)
+	}
 	c := paho.NewClient(opts)
 	token := c.Connect()
 	if !token.WaitTimeout(5 * time.Second) {

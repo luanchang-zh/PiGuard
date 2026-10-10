@@ -1,8 +1,10 @@
 # Go 监控与控制后端
 
-在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警与图片关联、配置同步、JPEG 图片上传/读取与 WebSocket。拍照和告警图片功能当前为代码交付，运行验证后置。
+在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警与图片关联、配置同步、JPEG 上传/读取、WebSocket，以及下述认证接入和部署文件。本轮为功能代码交付，运行验证后置。
 
 ## 软件验收
+
+认证本轮只给旧 handler 业务夹具显式注入 loopback 开发认证依赖，保留断言；配置加载测试和旧匿名 Broker 集成夹具尚未按默认认证更新。V1 要补角色拒绝无副作用、Authorization 优先、会话容量/固定到期/退出/重启、WS 释放、CORS/CSRF/预检、凭据不泄漏与原业务回归；V2 验证真实多设备 ACL、健康检查、遗嘱、retained/重连和 Compose。下面是延期命令，不代表已通过。
 
 当前按功能优先推进，新增功能开发只做格式、编译和代码核对。下列 test/race/vet 与真实 Broker/Docker/硬件联调集中后置；未执行的检查不视为通过。
 
@@ -24,50 +26,122 @@ Windows 的竞态检查需要启用 CGo，并使用包含 MinGW-w64 8 或更新�
 CC='C:/path/to/w64devkit/bin/gcc.exe' go test -race -count=1 ./...
 ```
 
-## Broker 环境联调（后续验证）
+## 认证配置与启动（操作示例，运行验证后置）
 
-启动 Broker 与后端：
+默认开启 HTTP 认证和 Broker 认证，没有可直接使用的默认密码。先 `cp .env.example .env`，自行填写五个非空密码（平台 HTTP、设备 HTTP、平台 MQTT、设备 MQTT、Broker 健康）；HTTP 与 MQTT 独立。用户名为 1—64 位 ASCII 字母、数字、下划线或连字符。设备用户名就是 `PIGUARD_SEED_DEVICE_ID`，MQTT 平台/设备/健康身份不得重用；HTTP 平台与设备也不能同名。密码允许特殊字符，禁止换行/NUL；在 `.env` 中用单引号保护 `$` 等字符，Bash 原生启动需要兼容的引号语法。
+
+`PIGUARD_HTTP_ALLOWED_ORIGINS` 为 JSON 数组，例如 `'["http://127.0.0.1:5173"]'`；5173 只是例子，改成实际 Vue 来源。默认 `[]` 仅后端同源。浏览器与后端应使用同一个 IP/域名和同一 HTTP(S) scheme，端口可不同。`localhost` 与 `127.0.0.1` 是不同主机，不能混用来演示 Cookie。跨站点、TLS 证书和代理部署另行处理。
 
 ```sh
 docker compose up --build
 ```
 
-另开终端，发布演示设备的在线状态与 2Hz 遥测：
+Compose 先运行 `broker-init`，用官方 `mosquitto_passwd` 生成哈希密码和显式 ACL，再等认证 Broker 健康，最后启动 Go。未填必需变量时 Compose 直接拒绝；初始化失败不会启动匿名 Broker。`broker-auth` 保存认证文件，`broker-data` 保存 Broker persistence，`backend-data` 保存 SQLite/图片。初始化只替换认证目录中的 passwords/acl/ready；不要编辑生成的密码哈希。健康账号只读 `$SYS/broker/uptime`，后端 `/health` 无需凭据。后端首次连接 Broker 失败仍退出。
+
+生成文件权限为目录 750、密码/ACL 640，容器内归 mosquitto 所有；Broker 只读挂载认证卷，启动脚本仅调整数据卷权限。官方镜像布局参考 [Mosquitto Dockerfile](https://github.com/eclipse-mosquitto/mosquitto/blob/v2.0.21/docker/2.0/Dockerfile)。这里尚未启动 Docker 验证。
+
+原生 Go 不依赖 Compose。先安装 Mosquitto（含 `mosquitto_passwd`），在 Bash/Git Bash 导入自己填写的 `.env`，使用同一套账号初始化：
 
 ```sh
-go run ./cmd/simulator -duration 30s
+set -a
+. ./.env
+set +a
+auth_dir="$(pwd)/deploy/generated-auth"
+sh deploy/init-broker-auth.sh "$auth_dir"
+mkdir -p "$auth_dir/data"
+printf 'listener 1883 127.0.0.1\nallow_anonymous false\npassword_file %s/passwords\nacl_file %s/acl\npersistence true\npersistence_location %s/data/\nlog_dest stdout\n' \
+  "$auth_dir" "$auth_dir" "$auth_dir" > "$auth_dir/mosquitto.conf"
+mosquitto -c "$auth_dir/mosquitto.conf"
 ```
 
-模拟器正常结束会发布离线状态；异常断连由 Broker 发布离线遗嘱。可用 `-broker tcp://host:1883` 和 `-device car-001` 选择地址及已登记设备，未知设备不会自动注册。
-
-查看查询结果：
+另开终端，同样导入 `.env` 后启动 Go：
 
 ```sh
-curl http://127.0.0.1:8080/api/v1/devices
-curl http://127.0.0.1:8080/api/v1/devices/car-001
-curl http://127.0.0.1:8080/api/v1/devices/car-001/state
-curl 'http://127.0.0.1:8080/api/v1/devices/car-001/telemetry?limit=10'
+go run ./cmd/server -config config.yaml
 ```
 
-浏览器开发者控制台可查看实时事件：
+原生 Broker 示例绑定 loopback；局域网接设备时调整 listener，Go 使用 `PIGUARD_HTTP_ADDR=0.0.0.0:8080`，保持认证开启。Linux 原生 Broker 用当前普通用户运行，或为实际服务用户设置认证目录和数据目录读取/写入权限；Windows 使用同一用户并确认文件 ACL。原生配置和 Compose 引用的文件位置不同，上面的命令会生成与本机绝对路径一致的配置。原生 Broker 启动前须确认初始化成功及 ready 存在。
+
+HTTP 其他配置可写在 `config.yaml` 的 `http.auth`：disabled、platform_username/password、device_passwords 映射、session_ttl_minutes（缺省 30，1—1440）、allowed_origins。对应环境变量为 `PIGUARD_HTTP_AUTH_DISABLED`、`PIGUARD_HTTP_PLATFORM_USERNAME/PASSWORD`、`PIGUARD_HTTP_DEVICE_PASSWORDS`（JSON 对象）、`PIGUARD_HTTP_SESSION_TTL_MINUTES` 和 `PIGUARD_HTTP_ALLOWED_ORIGINS`（JSON 数组）。非空环境覆盖 YAML；`PIGUARD_HTTP_SEED_DEVICE_PASSWORD` 最后覆盖 seed 身份的密码，方便单设备演示。更换 seed 时同步设备端用户名；多设备用完整 JSON 映射配置各自密码。配置相对数据路径以配置文件目录为基准；非法配置在建目录/数据库/连接 Broker 之前退出，错误不回显凭据。
+
+仅显式本地开发可设 `PIGUARD_HTTP_AUTH_DISABLED=true`，监听必须为 127.0.0.1/::1/localhost；来源检查仍开启，会话路由不注册。默认 Compose 不提供匿名模式。独立自备匿名 Broker 的模拟器必须显式加 `-allow-anonymous`，不会因空凭据自动降级。
+
+## 平台与设备接入
+
+平台 Basic 可访问全部现有业务 API；设备 Basic 只可 POST 自己的 frames，不能读设备列表/图片、控制、配置或连 WS。凭据不注册设备，未知身份对应的业务设备仍须先登记。先导入 `.env`，再将模拟器设备凭据导出：
+
+```sh
+export PIGUARD_SIM_MQTT_USERNAME="$PIGUARD_SEED_DEVICE_ID"
+export PIGUARD_SIM_MQTT_PASSWORD="$PIGUARD_DEVICE_MQTT_PASSWORD"
+export PIGUARD_SIM_HTTP_USERNAME="$PIGUARD_SEED_DEVICE_ID"
+export PIGUARD_SIM_HTTP_PASSWORD="$PIGUARD_HTTP_SEED_DEVICE_PASSWORD"
+go run ./cmd/simulator -device "$PIGUARD_SEED_DEVICE_ID" -duration 30s
+```
+
+MQTT/HTTP 独立参数为 `-mqtt-username/-mqtt-password/-http-username/-http-password`，显式参数优先于上述环境变量（显式空值也会覆盖）。配对不完整、用户名不等于 device 或非法凭据在连接之前拒绝；密码推荐环境变量，帮助文本不显示环境密码。模拟器正常结束发布离线状态，异常断连使用离线遗嘱；`-broker tcp://host:1883` 与 `-api http://host:8080` 独立配置，URL 不放凭据，未知设备不自动注册。
+
+平台查询：
+
+```sh
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/devices
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/devices/car-001
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/devices/car-001/state
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" 'http://127.0.0.1:8080/api/v1/devices/car-001/telemetry?limit=10'
+```
+
+以下示例使用默认已登记 `car-001`，更改 seed 时替换 URL。所有查询/写入先验证来源和身份；显式 Authorization 错误不会回退 Cookie。业务/API/图片响应 `Cache-Control: no-store`。MQTT ACL 默认拒绝：平台读 telemetry/events/status/command-acks/config-acks、写 commands/config；设备只写自己的五类上行（含 status 遗嘱），只读自己的两类下行。没有全局 `%u` 权限规则。增加设备需显式登记并增加其 HTTP 凭据、Broker 密码和独立 user ACL，本轮没有注册 API。
+
+## 浏览器登录、WS 与图片
+
+在真实 Vue 来源页面的控制台演示，先将该来源加入白名单；保持同主机同 scheme。登录 POST 必须平台 Basic，成功 201，Cookie HttpOnly/host-only/Path=/api/v1/SameSite=Strict；直接 HTTPS 才加 Secure。会话固定到期、不滑动延长，缺省 30 分钟，最多 1024 份；退出、到期和重启失效并关闭关联 WS。WS 同时最多 128 条连接。密码、Cookie、CSRF 不放 URL 或打印日志。
 
 ```js
-const ws = new WebSocket('ws://127.0.0.1:8080/api/v1/ws');
+const api = `http://${location.hostname}:8080`; // 改为实际后端，保留同主机和 scheme
+const username = prompt('平台用户名');
+const password = prompt('平台密码');
+const bytes = new TextEncoder().encode(`${username}:${password}`);
+const basic = btoa(String.fromCharCode(...bytes));
+const login = await fetch(`${api}/api/v1/auth/session`, {
+  method: 'POST', credentials: 'include', headers: {Authorization: `Basic ${basic}`}
+});
+if (!login.ok) throw new Error(`登录失败 HTTP ${login.status}`);
+const session = (await login.json()).data; // expires_at / csrf_token，不打印秘密
+const current = await fetch(`${api}/api/v1/auth/session`, {credentials: 'include'});
+if (!current.ok) throw new Error('会话已失效，需要重新登录');
+const wsURL = new URL('/api/v1/ws', api);
+wsURL.protocol = wsURL.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(wsURL); // 浏览器自动携 Cookie
 ws.onmessage = event => console.log(JSON.parse(event.data));
-// 使用完后：ws.close();
+const response = await fetch(`${api}/api/v1/devices/car-001/frame`, {credentials: 'include'});
+if (response.ok) {
+  const frame = (await response.json()).data;
+  const img = new Image(); img.src = new URL(frame.url, api); document.body.append(img);
+}
+// Cookie 写请求：命令、配置、平台上传和退出均加 X-CSRF-Token。
+const logout = await fetch(`${api}/api/v1/auth/session`, {
+  method: 'DELETE', credentials: 'include', headers: {'X-CSRF-Token': session.csrf_token}
+});
+if (!logout.ok) throw new Error(`退出失败 HTTP ${logout.status}`);
+ws.close();
 ```
 
-也可启动独立 Mosquitto，然后 `go run ./cmd/server -config config.yaml`。配置文件中的相对路径以该文件目录为基准，`PIGUARD_*` 环境变量可覆盖配置。
+GET session 返回 username/role/auth_mode；Cookie 返回 expires_at/csrf_token，Basic 不自动创建会话，未携有效会话则两字段 null。DELETE 为 204，撤销所携有效会话并清 Cookie；平台 Basic 也可直接退出。设备不能创建、查询或退出会话。原 snapshot_url/result.url/frame_update.url 保持稳定，图片读取用平台 Basic 或登录 Cookie，不加临时凭据参数。
+
+来源检查先于身份。合法 OPTIONS 预检无需身份，支持 GET/POST/PUT/DELETE 和 Authorization/Content-Type/X-CSRF-Token，204 且无业务副作用；明确回显许可来源和 credentials，不用 `*`。Cookie 写请求缺少/错误 CSRF 返回 403；Basic 不依赖 Cookie，因此无需 CSRF，仍检查 Origin。
+
+失败定位：401/40101 是凭据缺失/错误、Cookie 到期或重启失效；403/40301 是权限/Origin/CSRF 拒绝（非法来源先拒绝），检查浏览器实际 scheme、主机、端口及 credentials。503/50303 是会话容量用尽；WS 容量拒绝为 503/50001。Broker 不健康先看初始化结果、身份冲突、文件权限、健康账号密码与 ACL，不改为匿名。日志不记录 Authorization/Cookie/CSRF/密码。
+
+轮换时停服务，修改 `.env`/YAML/环境和认证生成源，重新初始化后重启 Broker/Go；Compose 可用 `docker compose down`（不加 `-v`）再 `docker compose up --build --force-recreate`。原生停止 Broker/Go 后重新运行初始化脚本和启动命令。保留数据卷/SQLite，浏览器重新登录，设备同时更新两组密码。没有凭据热更新或持久会话。
 
 ## 动作命令
 
 模拟器在线后可创建命令：
 
 ```sh
-curl -X POST http://127.0.0.1:8080/api/v1/devices/car-001/commands \
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" -X POST http://127.0.0.1:8080/api/v1/devices/car-001/commands \
   -H 'Content-Type: application/json' \
   -d '{"type":"buzzer.test","params":{"duration_ms":1000}}'
-curl http://127.0.0.1:8080/api/v1/commands/返回的command_id
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/commands/返回的command_id
 ```
 
 - 四类动作：buzzer.test、indicator.test、scenario.start、scenario.stop，另支持下述 camera.snapshot。蜂鸣器/灯时长 100—5000ms，灯色 green/yellow/red；场景名称与播放速度遵循网络规范。配置使用独立接口。
@@ -86,11 +160,11 @@ go run ./cmd/simulator -duration 60s -api http://127.0.0.1:8080
 ```
 
 ```sh
-curl -X POST http://127.0.0.1:8080/api/v1/devices/car-001/commands \
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" -X POST http://127.0.0.1:8080/api/v1/devices/car-001/commands \
   -H 'Content-Type: application/json' \
   -d '{"type":"camera.snapshot","params":{"quality":80}}'
-curl http://127.0.0.1:8080/api/v1/commands/返回的command_id
-curl http://127.0.0.1:8080/api/v1/snapshots/成功结果中的snapshot_id/content -o snapshot.jpg
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/commands/返回的command_id
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/snapshots/成功结果中的snapshot_id/content -o snapshot.jpg
 ```
 
 - `params` 必须为对象，quality 可以省略，缺省 80；显式值为 1—100 整数。null、额外字段、非整数和越界返回 400/40001。平台在保存/下发时补齐默认 quality。
@@ -105,7 +179,7 @@ curl http://127.0.0.1:8080/api/v1/snapshots/成功结果中的snapshot_id/conten
 
 ```sh
 go run ./cmd/simulator -duration 60s -event-image -api http://127.0.0.1:8080
-curl 'http://127.0.0.1:8080/api/v1/devices/car-001/events?limit=10'
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" 'http://127.0.0.1:8080/api/v1/devices/car-001/events?limit=10'
 ```
 
 - 告警上行可省略图片引用，或使用互斥的 `snapshot_id` / `frame_id`。snapshot_id 是 1—64 个非空白字符；frame_id 沿用上传身份的 1—64 ASCII 字母/数字/下划线/连字符，支持先告警后图片。显式 null、非法类型、同时提供两种引用均拒绝。合法告警即使引用错误或图片未到也保存。
@@ -119,8 +193,8 @@ curl 'http://127.0.0.1:8080/api/v1/devices/car-001/events?limit=10'
 ## 配置同步
 
 ```sh
-curl http://127.0.0.1:8080/api/v1/devices/car-001/config
-curl -X PUT http://127.0.0.1:8080/api/v1/devices/car-001/config \
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/devices/car-001/config
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" -X PUT http://127.0.0.1:8080/api/v1/devices/car-001/config \
   -H 'Content-Type: application/json' \
   -d '{"expected_version":1,"rules":{"obstacle":{"warning_distance_m":20}}}'
 ```
@@ -137,13 +211,13 @@ curl -X PUT http://127.0.0.1:8080/api/v1/devices/car-001/config \
 ## 图片上传与读取
 
 ```sh
-curl -X POST http://127.0.0.1:8080/api/v1/devices/car-001/frames \
+curl -u "$PIGUARD_SIM_HTTP_USERNAME:$PIGUARD_SIM_HTTP_PASSWORD" -X POST http://127.0.0.1:8080/api/v1/devices/car-001/frames \
   -F 'file=@preview.jpg' \
   -F 'frame_id=preview-001' \
   -F 'captured_at=2026-10-09T12:00:00.123Z' \
   -F 'type=preview'
-curl http://127.0.0.1:8080/api/v1/devices/car-001/frame
-curl http://127.0.0.1:8080/api/v1/snapshots/返回的snapshot_id/content -o downloaded.jpg
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/devices/car-001/frame
+curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http://127.0.0.1:8080/api/v1/snapshots/返回的snapshot_id/content -o downloaded.jpg
 ```
 
 - multipart 严格包含一个 `file/frame_id/captured_at/type`，拒绝未知、缺失或重复字段。`frame_id` 为 1—64 个 ASCII 字母、数字、下划线或连字符；`captured_at` 使用带时区 RFC3339/RFC3339Nano，返回 UTC；类型为 preview/snapshot/event。
@@ -155,7 +229,7 @@ curl http://127.0.0.1:8080/api/v1/snapshots/返回的snapshot_id/content -o down
 - 文件和元数据可读后，新增 snapshot/event 以及成为最新的 preview 发布一次 `frame_update`，data 包含 device_id/snapshot_id/type/captured_at/url，不含 JPEG；timestamp 为平台时间。慢客户端沿用 Hub 的有界队列与关闭策略。
 - Windows 图片存储同步 JPEG 普通文件后以不可覆盖方式发布，避免对目录句柄调用不支持的 `Sync()`；Linux 继续同步文件和发布目录。两者均保留失败补偿，硬断电恢复不超出操作系统/文件系统能力；本次代码修复的运行回归延后。
 - 已登记的离线设备及运行中 MQTT 断线均可上传，图片不更新 online、last_seen_at 或配置版本。平台初次启动仍要求 Broker 连接成功。
-- 本轮图片持久保留，没有 TTL 或删除接口；拍照与告警引用校验见上节，鉴权和容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
+- 本轮图片持久保留，没有 TTL 或删除接口；拍照与告警引用校验见上节，鉴权接入见上节，容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
 
 ## 状态约定
 

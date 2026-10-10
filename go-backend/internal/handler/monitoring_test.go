@@ -35,7 +35,7 @@ func monitoringEngine(t *testing.T) (*gin.Engine, *service.Monitor, *realtime.Hu
 	if _, err := svc.Seed(context.Background(), service.SeedInput{DeviceID: "car-001", Name: "Demo Car", Mode: "mock", SoftwareVersion: "0.1.0"}); err != nil {
 		t.Fatal(err)
 	}
-	return NewEngine(Dependencies{Ping: sql.PingContext, Devices: svc, Telemetry: service.NewTelemetryService(h, d), Hub: hub}), m, hub, h
+	return NewEngine(Dependencies{Auth: disabledTestAuth(t), Ping: sql.PingContext, Devices: svc, Telemetry: service.NewTelemetryService(h, d), Hub: hub}), m, hub, h
 }
 
 func decode(t *testing.T, body string) map[string]any {

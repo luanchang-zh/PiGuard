@@ -21,16 +21,25 @@ import (
 )
 
 type SnapshotClient struct {
-	api    string
-	client *http.Client
+	api         string
+	client      *http.Client
+	credentials Credentials
 }
 
 func NewSnapshotClient(api string) (*SnapshotClient, error) {
 	u, err := url.Parse(api)
-	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return nil, fmt.Errorf("api must be an HTTP(S) base URL without credentials, query or fragment")
 	}
 	return &SnapshotClient{api: strings.TrimRight(u.String(), "/"), client: &http.Client{Timeout: 6 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+}
+
+func (s *SnapshotClient) SetCredentials(device string, credentials Credentials, allowEmpty bool) error {
+	if err := credentials.Validate(device, allowEmpty); err != nil {
+		return err
+	}
+	s.credentials = credentials
+	return nil
 }
 
 func (s *SnapshotClient) Capture(ctx context.Context, cmd protocol.Command, at time.Time) (json.RawMessage, error) {
@@ -123,6 +132,9 @@ func (s *SnapshotClient) upload(ctx context.Context, endpoint, contentType strin
 		return protocol.FrameResult{}, false, err
 	}
 	req.Header.Set("Content-Type", contentType)
+	if s.credentials.Username != "" {
+		req.SetBasicAuth(s.credentials.Username, s.credentials.Password)
+	}
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return protocol.FrameResult{}, true, fmt.Errorf("snapshot HTTP upload failed: %w", err)

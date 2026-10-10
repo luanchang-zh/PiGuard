@@ -15,7 +15,7 @@ func TestHealth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("数据库可连接", func(t *testing.T) {
-		engine := NewEngine(Dependencies{
+		engine := NewEngine(Dependencies{Auth: disabledTestAuth(t),
 			Ping: func(context.Context) error { return nil },
 		})
 		status, body := getJSON(engine, "/health")
@@ -25,7 +25,7 @@ func TestHealth(t *testing.T) {
 	})
 
 	t.Run("数据库不可用", func(t *testing.T) {
-		engine := NewEngine(Dependencies{
+		engine := NewEngine(Dependencies{Auth: disabledTestAuth(t),
 			Ping: func(context.Context) error { return errors.New("db down") },
 		})
 		status, body := getJSON(engine, "/health")

@@ -2,6 +2,9 @@ package handler
 
 import (
 	"context"
+	"log/slog"
+	"net/http"
+	"piguard/go-backend/internal/auth"
 
 	"piguard/go-backend/internal/realtime"
 	"piguard/go-backend/internal/service"
@@ -20,13 +23,17 @@ type Dependencies struct {
 	Configs   service.ConfigService
 	Frames    service.FrameService
 	Hub       *realtime.Hub
+	Auth      *auth.Manager
 }
 
 // NewEngine 注册健康检查和规范中的 /api/v1 路由。
 // 图片上传与内容读取和监控共用同一个 Hub。
 func NewEngine(dep Dependencies) *gin.Engine {
 	engine := gin.New()
-	engine.Use(gin.Logger(), gin.Recovery())
+	engine.Use(gin.Logger(), gin.CustomRecoveryWithWriter(nil, func(c *gin.Context, _ any) {
+		slog.Error("HTTP handler panic", "route", c.FullPath())
+		c.AbortWithStatusJSON(http.StatusInternalServerError, Response{Code: 50001, Message: "内部错误"})
+	}))
 	engine.GET("/health", Health(dep.Ping))
 
 	devices := NewDeviceHandler(dep.Devices)
@@ -37,7 +44,9 @@ func NewEngine(dep Dependencies) *gin.Engine {
 	frames := NewFrameHandler(dep.Frames)
 	ws := NewWebsocketHandler(dep.Hub)
 
-	v1 := engine.Group("/api/v1")
+	v1 := engine.Group("/api/v1", originGuard(dep.Auth), accessGuard(dep.Auth))
+	v1.OPTIONS("/*path", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	registerSessions(v1, dep.Auth)
 	v1.GET("/ws", ws.Serve)
 	v1.GET("/commands/:command_id", commands.Get)
 	v1.GET("/snapshots/:snapshot_id/content", frames.Content)

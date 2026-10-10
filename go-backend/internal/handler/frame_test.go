@@ -71,7 +71,7 @@ func (f *frameFixture) open(t *testing.T) {
 		}
 	}
 	f.frames = service.NewFrameService(f.snapshots, f.devices, f.dir, f.hub)
-	f.engine = NewEngine(Dependencies{Devices: devices, Frames: f.frames, Hub: f.hub})
+	f.engine = NewEngine(Dependencies{Auth: disabledTestAuth(t), Devices: devices, Frames: f.frames, Hub: f.hub})
 	f.server = httptest.NewServer(f.engine)
 }
 func (f *frameFixture) close() {

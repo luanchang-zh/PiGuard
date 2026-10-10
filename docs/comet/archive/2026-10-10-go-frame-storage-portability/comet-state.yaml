@@ -1,0 +1,188 @@
+schema: comet.native.v4
+name: go-frame-storage-portability
+language: zh-CN
+phase: archive
+status: done
+state_version: 10
+brief: brief.md
+shape_confirmation_hash: bf97a404103750d77e33490bc31ba6ab3b091e7c3c376b43c5c50cc9c7717ec5
+spec_changes:
+  - capability: frame-storage
+    operation: modify
+    source: specs/frame-storage/spec.md
+workspace:
+  isolation: current
+  change_branch: go后端开发
+  target_branch: go后端开发
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：代码完成 Windows/Linux 的持久化适配，合法图片上传不再无条件走 Windows 不支持的目录 Sync 分支；普通文件同步与
+      Linux 目录持久化保留，不能笼统吞掉权限/磁盘错误。
+    result: passed
+    reason:
+      text: 只读Verifier核对普通文件Sync保留，仅Windows跳过目录Sync；Linux目录打开/同步/关闭仍执行且失败返回，没有吞掉普通权限/空间/I/O故障。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: A2：代码保留 (device_id, frame_id) 幂等与冲突处理、不可覆盖发布、preview 排序以及提交后 WS 通知路径；不更改现有
+      DTO、JPEG 限制或错误码。
+    result: passed
+    reason:
+      text: 修改仅目录同步分支；不可覆盖Link、frame_id身份、原字节重试、409冲突、preview排序与提交后WS路径保留，DTO/限制/错误码不变。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：代码保留文件/DB 失败与提交前取消的补偿，提交后断连仍保留可重试结果；路径约束及未知/缺文件 404、其他存储错误 500 的映射不被移除。
+    result: passed
+    reason:
+      text: 临时及未提交文件、DB失败/提交前取消补偿保留；新分支错误进入命名返回err并触发补偿；提交后保留结果。路径约束、404/500映射保留。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：代码继续从持久 SQLite/图片目录读取身份、预览与原字节，未改为仅内存状态；没有加入图片清理或删除行为。
+    result: passed
+    reason:
+      text: 身份/预览/路径仍查持久SQLite，内容仍从配置目录读取原字节；没有内存替代或清理/删除接口。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：修改的 Go 文件格式符合项目要求，`go build ./...` 可以编译当前实现；不以
+      test/race/vet、Broker、Docker 或另一平台的测试环境阻塞后续业务功能开发。编译仅证明可构建，不代替运行验收。
+    result: passed
+    reason:
+      text: Go格式符合现有要求，Runtime go build ./... exit0；结论仅代码核对与编译，不以延期测试/外部环境作前置。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: A6：README/Spec 明确功能代码完成与运行验证延后的区别，并记录 V1/V2 的待验项目；已有测试保留，未运行项目不得记作通过。
+      这些是本轮代码交付标准。HTTP 实际返回、并发/故障/重启与跨平台运行结果属于 V1 的运行验收，当前不宣称通过。
+    result: passed
+    reason:
+      text: README/完整Spec区分代码交付及V1/V2延期验证，说明Windows/Linux保障范围；已有测试未修改，未运行项目未记通过。
+      truncated: false
+builder_handoff:
+  candidate_id: 7156caa1-74de-4d83-a961-a3a1bb7e6e98
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:fef4f0fd-a59f-4b83-8d8e-d7b9e7e6cc1d
+  iteration: 1
+  summary:
+    text: 修复Windows目录Sync导致正常图片上传500：Windows保留JPEG文件Sync及不可覆盖发布，非Windows保留目录Sync；保留补偿/DB/幂等等链路，README记录边界与后置验收。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+  checks:
+    - name:
+        text: Windows编译
+        truncated: false
+      result: passed
+      note:
+        text: go build ./...
+        truncated: false
+    - name:
+        text: Linux交叉编译
+        truncated: false
+      result: passed
+      note:
+        text: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ./...
+        truncated: false
+    - name:
+        text: 格式与差异
+        truncated: false
+      result: passed
+      note:
+        text: gofmt与git diff --check
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 按用户要求未运行test/race/vet、双平台运行回归或Broker/Docker/硬件联调；编译和代码交付不代表运行验收。
+      truncated: false
+  known_limits_truncated: false
+  review: null
+  submitted_at: 2026-10-10T06:38:59.848Z
+blockers: []
+verification:
+  candidate_id: 7156caa1-74de-4d83-a961-a3a1bb7e6e98
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:264eb0a6-abb2-4a60-b68e-1a692e288bd5
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: go-build
+      name:
+        text: Go编译（测试后置）
+        truncated: false
+      argv_display:
+        - text: build
+          truncated: false
+        - text: ./...
+          truncated: false
+      argv_truncated: false
+      cwd_ref: go-backend
+      status: passed
+      exit_code: 0
+      duration_ms: 14944
+  summary:
+    text: 新的只读Verifier逐项核对A1至A6均通过，仅覆盖代码交付；Runtime编译通过，不包含实际Windows上传或跨平台运行验收。
+    truncated: false
+  risks:
+    - text: Windows实际HTTP上传、Linux运行及并发/故障/取消/重启证据待V1，本轮不宣称通过。
+      truncated: false
+    - text: Windows文件Sync保留但不刷新目录句柄，目录项硬断电恢复依赖操作系统/文件系统，文档已限定。
+      truncated: false
+    - text: test/race/vet、真实Broker/Docker、边缘端/前端与硬件联调全部延后，Verifier未运行这些检查。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-10-10T06:42:06.824Z
+history:
+  - goal_cycle: 1
+    iteration: 0
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native confirmed acceptance criteria changed
+      truncated: false
+    completed_at: 2026-10-10T06:36:15.288Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 新的只读Verifier逐项核对A1至A6均通过，仅覆盖代码交付；Runtime编译通过，不包含实际Windows上传或跨平台运行验收。
+      truncated: false
+    completed_at: 2026-10-10T06:42:06.824Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-10-10T06:17:18.537Z

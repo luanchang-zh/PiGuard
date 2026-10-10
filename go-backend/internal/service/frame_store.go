@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"piguard/go-backend/internal/protocol"
+	"runtime"
 )
 
 // Storage operations remain outside SQLite transactions and the Monitor lock.
@@ -56,17 +57,21 @@ func (s diskFrameStore) Save(ctx context.Context, id string, data []byte) (path 
 	if err = root.Remove(temp); err != nil {
 		return "", err
 	}
-	directory, err := root.Open(".")
-	if err != nil {
-		return "", err
-	}
-	err = directory.Sync()
-	closeErr := directory.Close()
-	if err != nil {
-		return "", err
-	}
-	if closeErr != nil {
-		return "", closeErr
+	// Windows cannot flush a directory handle opened by os.OpenRoot.
+	// The JPEG was synced before publication; Linux also syncs the directory.
+	if runtime.GOOS != "windows" {
+		directory, openErr := root.Open(".")
+		if openErr != nil {
+			return "", openErr
+		}
+		syncErr := directory.Sync()
+		closeErr := directory.Close()
+		if syncErr != nil {
+			return "", syncErr
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
 	}
 	if err = ctx.Err(); err != nil {
 		return "", err

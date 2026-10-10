@@ -4,6 +4,8 @@
 
 ## 软件验收
 
+当前按功能优先推进，新增功能开发只做格式、编译和代码核对。下列 test/race/vet 与真实 Broker/Docker/硬件联调集中后置；未执行的检查不视为通过。
+
 ```sh
 go test -count=1 ./...
 go test -race -count=1 ./...
@@ -108,6 +110,7 @@ curl http://127.0.0.1:8080/api/v1/snapshots/返回的snapshot_id/content -o down
 - content 返回 200/image/jpeg 和原始字节。无预览、未知图片或图片文件缺失返回 404/40403；未知设备返回 404/40401。存储/数据库其他错误返回 500/50001，不暴露本地路径。
 - 图片文件在 `storage.snapshot_dir`，SQLite 保存不可变身份、摘要、路径与时间元数据。文件持久成功后才提交元数据；提交前失败/取消补偿本次文件，提交后 HTTP 断连保留结果供幂等重试。重启保留最新预览和重试身份，未引用文件不作为有效图片。
 - 文件和元数据可读后，新增 snapshot/event 以及成为最新的 preview 发布一次 `frame_update`，data 包含 device_id/snapshot_id/type/captured_at/url，不含 JPEG；timestamp 为平台时间。慢客户端沿用 Hub 的有界队列与关闭策略。
+- Windows 图片存储同步 JPEG 普通文件后以不可覆盖方式发布，避免对目录句柄调用不支持的 `Sync()`；Linux 继续同步文件和发布目录。两者均保留失败补偿，硬断电恢复不超出操作系统/文件系统能力；本次代码修复的运行回归延后。
 - 已登记的离线设备及运行中 MQTT 断线均可上传，图片不更新 online、last_seen_at 或配置版本。平台初次启动仍要求 Broker 连接成功。
 - 本轮图片持久保留，没有 TTL 或删除接口；`camera.snapshot` 命令、告警引用完整闭环、鉴权和容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
 

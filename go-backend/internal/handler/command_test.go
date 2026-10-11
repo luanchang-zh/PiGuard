@@ -227,7 +227,7 @@ func TestCommandsHTTPAndTwoWebsockets(t *testing.T) {
 
 func TestCommandsHTTPRejectsWithoutRecords(t *testing.T) {
 	f := commandHTTP(t, "success")
-	for _, body := range []string{`null`, `{"type":"camera.snapshot","params":{}}`, `{"type":"buzzer.test","params":{"duration_ms":99}}`, `{"type":"scenario.stop","params":{},"extra":1}`, `{"type":"scenario.stop","params":{}} {}`, strings.Repeat(" ", 65<<10) + `{}`} {
+	for _, body := range []string{`null`, `{"type":"camera.snapshot","params":{"quality":0}}`, `{"type":"buzzer.test","params":{"duration_ms":99}}`, `{"type":"scenario.stop","params":{},"extra":1}`, `{"type":"scenario.stop","params":{}} {}`, strings.Repeat(" ", 65<<10) + `{}`} {
 		code, r := commandHTTPCall(t, f, "POST", "/api/v1/devices/car-001/commands", body)
 		if code != 400 || r.Code != 40001 {
 			t.Fatal(code, r)

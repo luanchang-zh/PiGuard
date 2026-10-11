@@ -66,7 +66,8 @@ func newCommandFixture(t *testing.T) *commandFixture {
 	f.p.available.Store(true)
 	f.online.Store(true)
 	f.clock.Store(time.Now().UTC().UnixNano())
-	f.s = NewCommandService(f.r, d, f.p, func(string) bool { return f.online.Load() }, f.hub, nil)
+	frames := NewFrameService(repo.NewSnapshotRepository(g), d, t.TempDir(), f.hub)
+	f.s = NewCommandService(f.r, d, f.p, func(string) bool { return f.online.Load() }, f.hub, frames)
 	f.s.now = func() time.Time { return time.Unix(0, f.clock.Load()).UTC() }
 	t.Cleanup(f.hub.Close)
 	t.Cleanup(f.s.Close)
@@ -212,8 +213,8 @@ func TestCommandRejectsWithoutPublishing(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.p.available.Store(true)
-	if _, err := f.s.Create(ctx, "car-001", protocol.CommandRequest{Type: "camera.snapshot", Params: json.RawMessage(`{}`)}); err == nil {
-		t.Fatal("unsupported accepted")
+	if _, err := f.s.Create(ctx, "car-001", protocol.CommandRequest{Type: "camera.snapshot", Params: json.RawMessage(`{"quality":0}`)}); err == nil {
+		t.Fatal("invalid quality accepted")
 	}
 	if _, err := f.s.Get(ctx, "missing"); !errors.Is(err, apperr.ErrCommandNotFound) {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -12,6 +13,13 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	keys := []string{
 		"PIGUARD_HTTP_ADDR",
+		"PIGUARD_HTTP_AUTH_DISABLED",
+		"PIGUARD_HTTP_PLATFORM_USERNAME",
+		"PIGUARD_HTTP_PLATFORM_PASSWORD",
+		"PIGUARD_HTTP_DEVICE_PASSWORDS",
+		"PIGUARD_HTTP_SEED_DEVICE_PASSWORD",
+		"PIGUARD_HTTP_SESSION_TTL_MINUTES",
+		"PIGUARD_HTTP_ALLOWED_ORIGINS",
 		"PIGUARD_MQTT_BROKER",
 		"PIGUARD_MQTT_CLIENT_ID",
 		"PIGUARD_MQTT_USERNAME",
@@ -27,6 +35,11 @@ func clearEnv(t *testing.T) {
 	for _, key := range keys {
 		t.Setenv(key, "")
 	}
+	t.Setenv("PIGUARD_HTTP_PLATFORM_USERNAME", "platform")
+	t.Setenv("PIGUARD_HTTP_PLATFORM_PASSWORD", "test-http-platform")
+	t.Setenv("PIGUARD_HTTP_SEED_DEVICE_PASSWORD", "test-http-device")
+	t.Setenv("PIGUARD_MQTT_USERNAME", "platform")
+	t.Setenv("PIGUARD_MQTT_PASSWORD", "test-mqtt-platform")
 }
 
 func TestLoadAndEnvOverride(t *testing.T) {
@@ -118,5 +131,41 @@ func TestCommittedConfigParses(t *testing.T) {
 	}
 	if cfg.HTTP.Addr != "127.0.0.1:8080" {
 		t.Fatalf("仓库内配置应监听本机 8080，得到 %s", cfg.HTTP.Addr)
+	}
+}
+
+func TestAuthenticationEnvironmentValidation(t *testing.T) {
+	for _, tc := range []struct{ name, key, value string }{
+		{"missing HTTP password", "PIGUARD_HTTP_PLATFORM_PASSWORD", ""},
+		{"missing MQTT password", "PIGUARD_MQTT_PASSWORD", ""},
+		{"illegal password", "PIGUARD_HTTP_PLATFORM_PASSWORD", "private\nvalue"},
+		{"bad device JSON", "PIGUARD_HTTP_DEVICE_PASSWORDS", "null"},
+		{"identity conflict", "PIGUARD_HTTP_PLATFORM_USERNAME", "car-001"},
+		{"bad TTL", "PIGUARD_HTTP_SESSION_TTL_MINUTES", "0"},
+		{"bad origin authority", "PIGUARD_HTTP_ALLOWED_ORIGINS", `["http://[localhost]:5173"]`},
+		{"bad origin JSON", "PIGUARD_HTTP_ALLOWED_ORIGINS", "null"},
+		{"non-loopback development", "PIGUARD_HTTP_ADDR", "0.0.0.0:8080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearEnv(t)
+			if tc.name == "non-loopback development" {
+				t.Setenv("PIGUARD_HTTP_AUTH_DISABLED", "true")
+			}
+			t.Setenv(tc.key, tc.value)
+			_, err := Load(filepath.Join("..", "..", "config.yaml"))
+			if err == nil {
+				t.Fatal("invalid authentication configuration accepted")
+			}
+			if strings.Contains(err.Error(), "private") || strings.Contains(err.Error(), "test-http-platform") || strings.Contains(err.Error(), "test-mqtt-platform") {
+				t.Fatal("configuration error disclosed credential")
+			}
+		})
+	}
+	clearEnv(t)
+	t.Setenv("PIGUARD_HTTP_SESSION_TTL_MINUTES", "45")
+	t.Setenv("PIGUARD_HTTP_ALLOWED_ORIGINS", `["http://127.0.0.1:5173"]`)
+	cfg, err := Load(filepath.Join("..", "..", "config.yaml"))
+	if err != nil || cfg.HTTP.Auth.Disabled || cfg.HTTP.Auth.SessionTTLMinutes != 45 || len(cfg.HTTP.Auth.AllowedOrigins) != 1 {
+		t.Fatal("authentication override failed", err)
 	}
 }

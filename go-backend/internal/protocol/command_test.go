@@ -14,6 +14,9 @@ func TestCommandRequests(t *testing.T) {
 		`{"type":"indicator.test","params":{"color":"red","duration_ms":1000}}`,
 		`{"type":"scenario.start","params":{"scenario":"sensor_failure","speed":0.5}}`,
 		`{"type":"scenario.stop","params":{}}`,
+		`{"type":"camera.snapshot","params":{}}`,
+		`{"type":"camera.snapshot","params":{"quality":1}}`,
+		`{"type":"camera.snapshot","params":{"quality":100}}`,
 	} {
 		if _, err := ParseCommandRequest([]byte(body)); err != nil {
 			t.Fatal(body, err)
@@ -31,7 +34,11 @@ func TestCommandRequests(t *testing.T) {
 		`{"type":"scenario.start","params":{"scenario":"unknown","speed":1}}`,
 		`{"type":"scenario.start","params":{"scenario":"normal_drive","speed":3}}`,
 		`{"type":"scenario.stop","params":{"unexpected":true}}`,
-		`{"type":"camera.snapshot","params":{}}`,
+		`{"type":"camera.snapshot","params":{"quality":0}}`,
+		`{"type":"camera.snapshot","params":{"quality":101}}`,
+		`{"type":"camera.snapshot","params":{"quality":1.5}}`,
+		`{"type":"camera.snapshot","params":{"quality":null}}`,
+		`{"type":"camera.snapshot","params":{"unexpected":true}}`,
 		`{"type":"scenario.stop","params":{},"command_id":"client-id"}`,
 		`{"type":"scenario.stop","params":{}} {}`,
 	} {

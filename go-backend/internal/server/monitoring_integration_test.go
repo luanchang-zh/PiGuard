@@ -230,7 +230,7 @@ func TestMonitoringBrokerLifecycle(t *testing.T) {
 	}
 	broker := startBroker()
 	backendConfig := filepath.Join(root, "backend.yaml")
-	yaml := fmt.Sprintf("http:\n  addr: 127.0.0.1:%d\nmqtt:\n  broker: tcp://127.0.0.1:%d\n  client_id: backend-integration\n  connect_timeout_seconds: 2\ndatabase:\n  sqlite_path: %s\nstorage:\n  snapshot_dir: %s\nseed:\n  device_id: car-001\n  name: Demo Car\n  mode: mock\n  software_version: 0.1.0\n", httpPort, brokerPort, filepath.Join(root, "data.db"), filepath.Join(root, "snapshots"))
+	yaml := fmt.Sprintf("http:\n  addr: 127.0.0.1:%d\n  auth:\n    disabled: true\n    session_ttl_minutes: 30\nmqtt:\n  broker: tcp://127.0.0.1:%d\n  client_id: backend-integration\n  connect_timeout_seconds: 2\ndatabase:\n  sqlite_path: %s\nstorage:\n  snapshot_dir: %s\nseed:\n  device_id: car-001\n  name: Demo Car\n  mode: mock\n  software_version: 0.1.0\n", httpPort, brokerPort, filepath.Join(root, "data.db"), filepath.Join(root, "snapshots"))
 	if err := os.WriteFile(backendConfig, []byte(yaml), 0600); err != nil {
 		t.Fatal(err)
 	}

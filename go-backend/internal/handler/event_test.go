@@ -59,11 +59,13 @@ func (f *eventFixture) open(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	f.events = service.NewEventService(repo.NewEventRepository(g), f.devices, f.hub, nil)
+	frames := service.NewFrameService(repo.NewSnapshotRepository(g), f.devices, t.TempDir(), f.hub)
+	f.events = service.NewEventService(repo.NewEventRepository(g), f.devices, f.hub, frames)
+	frames.SetEventNotifier(f.events.FrameSaved)
 	sql, _ := g.DB()
 	f.server = httptest.NewServer(NewEngine(Dependencies{Auth: disabledTestAuth(t),
 		Ping: sql.PingContext, Devices: devices, Telemetry: service.NewTelemetryService(repo.NewTelemetryRepository(g), f.devices),
-		Events: f.events, Hub: f.hub, Frames: service.NewFrameService(repo.NewSnapshotRepository(g), f.devices, t.TempDir(), f.hub),
+		Events: f.events, Hub: f.hub, Frames: frames,
 	}))
 }
 
@@ -191,7 +193,7 @@ func TestAlarmEventsHTTPAndWebSocket(t *testing.T) {
 			item := readPush(t, c)
 			seen[item.EventID] = item
 		}
-		if seen["evt-temp"].EventType != "high_temperature" || seen["evt-temp"].SnapshotID == nil || *seen["evt-temp"].SnapshotID != "snap-001" {
+		if seen["evt-temp"].EventType != "high_temperature" || seen["evt-temp"].SnapshotID != nil || seen["evt-temp"].SnapshotState != "pending" {
 			t.Fatal(seen["evt-temp"])
 		}
 		if seen["evt-old"].SnapshotID != nil || seen["evt-lane"].Action != "level_changed" {
@@ -244,12 +246,12 @@ func TestAlarmEventsHTTPAndWebSocket(t *testing.T) {
 	if err := json.Unmarshal(encoded, &keys); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"event_id", "type", "action", "level", "timestamp", "data", "snapshot_id"} {
+	for _, key := range []string{"event_id", "type", "action", "level", "timestamp", "data", "frame_id", "snapshot_id", "snapshot_available", "snapshot_url", "snapshot_state"} {
 		if _, ok := keys[key]; !ok {
 			t.Fatal("missing", key)
 		}
 	}
-	if _, ok := keys["id"]; ok || strings.Contains(string(encoded), "snapshot_available") {
+	if _, ok := keys["id"]; ok {
 		t.Fatal(string(encoded))
 	}
 	if other := f.items(t, "/api/v1/devices/car-002/events"); len(other) != 0 {

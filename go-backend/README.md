@@ -1,16 +1,12 @@
 # Go 监控与控制后端
 
-在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警与图片关联、配置同步、JPEG 上传/读取、WebSocket，以及下述认证接入和部署文件。本轮为功能代码交付，运行验证后置。
+在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警与图片关联、配置同步、JPEG 上传/读取、WebSocket、认证接入和部署。无硬件软件验收使用真实 SQLite、HTTP、WS、认证 Mosquitto 与软件设备；真实传感器、GPIO 和相机留待硬件验收。
 
 ## 软件验收
 
-认证本轮只给旧 handler 业务夹具显式注入 loopback 开发认证依赖，保留断言；配置加载测试和旧匿名 Broker 集成夹具尚未按默认认证更新。V1 要补角色拒绝无副作用、Authorization 优先、会话容量/固定到期/退出/重启、WS 释放、CORS/CSRF/预检、凭据不泄漏与原业务回归；V2 验证真实多设备 ACL、健康检查、遗嘱、retained/重连和 Compose。下面是延期命令，不代表已通过。
+验收按三步执行：V1 更新旧契约断言并完成软件回归；V2 使用认证 Compose 验证真实网络、设备 ACL 和故障恢复；V3 使用真实浏览器验证会话，并持续运行 30 分钟。结果分别记录通过、失败、环境阻塞和硬件待验。
 
-当前按功能优先推进，新增功能开发只做格式、编译和代码核对。下列 test/race/vet 与真实 Broker/Docker/硬件联调集中后置；未执行的检查不视为通过。
-
-拍照尚未新增运行测试。既有协议/service/handler 测试中仍保留“不支持 camera.snapshot”的旧断言，V1 要按新增契约替换并补充有效/错误图片引用、超时、重复/迟到 Ack、上传失败/幂等重试/取消与恢复用例。本轮只调整了旧测试的构造依赖，未改断言或运行测试。
-
-告警图片本轮只调整旧测试的构造参数、SameRecord 参数和接口占位方法，保留断言。原先“无有效图片也直接返回原 snapshot_id”的断言已不符合有效引用契约；V1 更新并补测双顺序/并发/幂等、跨设备/preview/缺文件/读取故障、取消/重启及 HTTP/双 WS。
+新增测试覆盖默认认证配置、角色拒绝无副作用、Authorization 优先、固定期限/容量/撤销、CORS/CSRF/预检、Cookie WS、拍照真实 HTTP 上传→Ack→双 WS、错误图片引用、迟到回执、丢失响应重试、取消，以及告警图片双顺序/并发幂等/存储故障/重启。
 
 ```sh
 go test -count=1 ./...
@@ -18,7 +14,39 @@ go test -race -count=1 ./...
 go vet ./...
 ```
 
-默认测试使用临时 SQLite、模拟发布器、实际软件设备执行器、HTTP/WS 客户端及 Paho/net.Pipe 软件 MQTT 传输，覆盖命令成功/失败/超时、参数与身份校验、重复回执、快速 Ack、持久恢复、告警事件幂等/筛选/推送、配置并发版本/回执/恢复、图片并发幂等/乱序预览/存储失败/重启/双 WS 及监控回归。无需 Docker、真实 Broker 或硬件。实际 MQTT 网络与设备执行行为需在后续环境联调确认。
+默认测试使用临时 SQLite、模拟发布器、软件设备执行器、HTTP/WS 客户端及 Paho/net.Pipe MQTT 传输，无需 Docker 或硬件。旧业务夹具显式使用 loopback 开发认证，新增验收夹具开启认证。Windows 缺少符号链接权限时只跳过对应子用例，其余故障断言继续执行；该用例由 Linux 容器实际覆盖。
+
+软件回归、Docker 和持续运行验收在 Bash/Git Bash 运行；浏览器检查按下文步骤单独触发：
+
+```sh
+bash scripts/verify-software.sh
+```
+
+脚本执行本机 test/vet、Linux 容器 test/vet/race，以及认证 Compose 和默认 30 分钟持续运行。日志保存在被忽略的 `data/acceptance/`。Docker 应已启动，容器安装编译器需要网络。本机竞态环境不可用时使用 Linux 结果，并如实保留平台差异。
+
+仅运行网络验收（不含持续运行）：
+
+```sh
+go test -tags integration ./internal/server -run '^TestDockerAcceptance$' -count=1 -timeout 50m -v
+```
+
+增加持续运行：
+
+```sh
+PIGUARD_SOAK_DURATION=30m go test -tags integration ./internal/server -run '^TestDockerAcceptance$' -count=1 -timeout 50m -v
+```
+
+网络夹具读取现有 Compose，创建独立项目、随机凭据和专属数据卷，在 loopback 分配端口并保持本次重启前后一致。它通过真实 seed 流程登记第二台设备，为其生成明确 ACL；不读取或覆盖开发者 `.env`。结束时只删除本次项目的容器/卷。检查包含两台软件设备、HTTP/两路 WS、五类命令、配置成功/失败/离线补发、JPEG、实际跨设备发布/订阅拒绝、遗嘱、Broker/后端重启、历史/图片/命令持久性及日志凭据检查。持续运行反复执行命令、拍照、WS 重连，并记录容器内存、线程数和文件描述符。
+
+持续运行开始时会输出一次性浏览器验收页面 URL。使用 Playwright CLI 打开该 URL，执行 `run-code --filename scripts/browser-auth-control.js`，然后从 snapshot 点击“开始检查”。页面检查实际 Cookie/CORS/CSRF、拍照 JPEG、Cookie WS、退出和固定期限到期。控制脚本取消 Chrome 的 HTTP Basic 认证弹窗，使负向请求返回实际 401。页面只在测试期间提供临时凭据，不保存认证状态文件或包含凭据的网络 trace。
+
+```sh
+npx --package @playwright/cli playwright-cli -s=piguard open 浏览器验收URL --browser chrome
+npx --package @playwright/cli playwright-cli -s=piguard run-code --filename scripts/browser-auth-control.js
+npx --package @playwright/cli playwright-cli -s=piguard snapshot
+```
+
+2026-10-11 本轮软件验收通过：Windows test/vet、Linux test/vet/race、认证 Docker 网络与重启恢复，以及 Chrome 的 9 项检查。30 分钟持续运行完成 816 次命令/WS 重连循环和额外 81 次拍照；内存最大读数 21.52 MiB，末段 20.58—21.52 MiB，文件描述符 11—14。测试容器/卷及浏览器已清理。结果和日志见 `data/acceptance/report.json`；该短时软件结果不替代真实硬件、硬断电或长期运行验收。
 
 Windows 的竞态检查需要启用 CGo，并使用包含 MinGW-w64 8 或更新运行库的 C 编译器，见 [Go 官方要求](https://go.dev/doc/articles/race_detector#Requirements)。使用便携工具链时，可在 Git Bash 中仅为本次检查指定编译器：
 
@@ -26,7 +54,7 @@ Windows 的竞态检查需要启用 CGo，并使用包含 MinGW-w64 8 或更新�
 CC='C:/path/to/w64devkit/bin/gcc.exe' go test -race -count=1 ./...
 ```
 
-## 认证配置与启动（操作示例，运行验证后置）
+## 认证配置与启动
 
 默认开启 HTTP 认证和 Broker 认证，没有可直接使用的默认密码。先 `cp .env.example .env`，自行填写五个非空密码（平台 HTTP、设备 HTTP、平台 MQTT、设备 MQTT、Broker 健康）；HTTP 与 MQTT 独立。用户名为 1—64 位 ASCII 字母、数字、下划线或连字符。设备用户名就是 `PIGUARD_SEED_DEVICE_ID`，MQTT 平台/设备/健康身份不得重用；HTTP 平台与设备也不能同名。密码允许特殊字符，禁止换行/NUL；在 `.env` 中用单引号保护 `$` 等字符，Bash 原生启动需要兼容的引号语法。
 
@@ -38,7 +66,7 @@ docker compose up --build
 
 Compose 先运行 `broker-init`，用官方 `mosquitto_passwd` 生成哈希密码和显式 ACL，再等认证 Broker 健康，最后启动 Go。未填必需变量时 Compose 直接拒绝；初始化失败不会启动匿名 Broker。`broker-auth` 保存认证文件，`broker-data` 保存 Broker persistence，`backend-data` 保存 SQLite/图片。初始化只替换认证目录中的 passwords/acl/ready；不要编辑生成的密码哈希。健康账号只读 `$SYS/broker/uptime`，后端 `/health` 无需凭据。后端首次连接 Broker 失败仍退出。
 
-生成文件权限为目录 750、密码/ACL 640，容器内归 mosquitto 所有；Broker 只读挂载认证卷，启动脚本仅调整数据卷权限。官方镜像布局参考 [Mosquitto Dockerfile](https://github.com/eclipse-mosquitto/mosquitto/blob/v2.0.21/docker/2.0/Dockerfile)。这里尚未启动 Docker 验证。
+生成文件权限为目录 750、密码/ACL 640，容器内归 mosquitto 所有；Broker 只读挂载认证卷，启动脚本仅调整数据卷权限。官方镜像布局参考 [Mosquitto Dockerfile](https://github.com/eclipse-mosquitto/mosquitto/blob/v2.0.21/docker/2.0/Dockerfile)。认证 Compose 的软件运行验证见上面的验收流程。
 
 原生 Go 不依赖 Compose。先安装 Mosquitto（含 `mosquitto_passwd`），在 Bash/Git Bash 导入自己填写的 `.env`，使用同一套账号初始化：
 
@@ -151,7 +179,7 @@ curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http:/
 - 快速/重复/冲突/迟到 Ack 不回退终态。重启保留记录、恢复截止时间，不自动重发动作。
 - 模拟器 `-ack-mode success|failed|none` 选择结果，`-ack-delay 12s` 可模拟迟到回执；它按 command_id 缓存结果，重复投递只重发回执，不重复模拟执行。
 
-## 拍照命令（代码已完成，运行验证后置）
+## 拍照命令
 
 在 Broker/后端已启动的环境中，启动软件设备，再用另一个终端创建命令：
 
@@ -173,9 +201,9 @@ curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http:/
 - 拍照 success Ack 的 result 严格只含 snapshot_id。平台查已提交记录，要求同设备、type=snapshot 且文件可打开；未知、跨设备、preview/event、缺文件或非法 result 不结束命令、不发 command_update，继续等有效回执或 timeout。不以设备图片时间判断 Ack 是否准时。
 - GET/command_update 的 success result 为 `{"snapshot_id":"snap-...","url":"/api/v1/snapshots/snap-.../content"}`。原设备 result 保留用于重复判断；首个终态不会被重复、冲突、迟到回执覆盖。图片上传的 frame_update 与命令状态更新分别产生，上传本身不结束命令。
 - 已提交图片不会因命令超时或迟到回执删除；之后文件缺失由 content API 返回 404，历史命令仍保留原成功事实。平台不要求同设备图片只能被一条命令引用，软件设备每条新命令仍生成一张新图。
-- 新代码仅经过格式、编译和独立代码核对；实际 HTTP→MQTT→模拟器→上传→Ack→GET/双 WS、跨平台、Broker/Docker 与真实相机证据将在 V1/V2 收集。
+- 软件测试覆盖 HTTP→模拟器上传→Ack→GET/双 WS；真实认证 Broker/Compose 链路由 Docker 验收夹具检查，真实相机仍待硬件验证。
 
-## 告警与图片（代码已完成，运行验证后置）
+## 告警与图片
 
 ```sh
 go run ./cmd/simulator -duration 60s -event-image -api http://127.0.0.1:8080
@@ -188,7 +216,7 @@ curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" 'http:
 - 状态为 none（无引用）、pending（尚无图片记录）、available（可读）、invalid（跨设备/preview）、missing（有记录但缺文件）、unavailable（通知时暂时读取故障）。GET 遇到 DB/其他存储故障返回 500；告警保存后的通知解析故障仍发 event，图片为 unavailable，并记录诊断。
 - 图片先到，首次 event 即可 available；告警先到，新图片提交后发 `event_image_update`，data 只含 event_id/device_id 和图片字段，前端据 event_id 更新原告警。该通知不创建另一条告警，不重发 event；幂等上传不重复通知。新 preview 可使相关引用更新为 invalid。GET 在重启后仍从持久引用和文件解析，WS 不补推历史；外部删图后 GET 反映 missing。
 - `-event-image` 默认关闭，保留无图演示。启用后先发布两次相同内容、带稳定 frame_id 的告警，再在独立过程上传 320×180 软件 event JPEG。HTTP 使用 -api，最多三次复用相同身份/时间/字节，整体 10 秒且每次最多 6 秒，进程结束会取消并等待；失败只记录日志，不伪造图片可用。遥测、配置和拍照工作继续运行。MQTT 与 HTTP 接收顺序仍由真实网络决定，平台支持两种顺序。
-- 当前 WS 类型为 telemetry/event/event_image_update/device_status/command_update/frame_update。配置状态通过 GET 查询，没有 config_update；本轮仅格式、编译和独立代码核对，实际链路证据在 V1/V2 后续收集。
+- 当前 WS 类型为 telemetry/event/event_image_update/device_status/command_update/frame_update。配置状态通过 GET 查询，没有 config_update；软件回归和真实 Broker/Compose 证据见验收章节。
 
 ## 配置同步
 
@@ -227,9 +255,9 @@ curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http:/
 - content 返回 200/image/jpeg 和原始字节。无预览、未知图片或图片文件缺失返回 404/40403；未知设备返回 404/40401。存储/数据库其他错误返回 500/50001，不暴露本地路径。
 - 图片文件在 `storage.snapshot_dir`，SQLite 保存不可变身份、摘要、路径与时间元数据。文件持久成功后才提交元数据；提交前失败/取消补偿本次文件，提交后 HTTP 断连保留结果供幂等重试。重启保留最新预览和重试身份，未引用文件不作为有效图片。
 - 文件和元数据可读后，新增 snapshot/event 以及成为最新的 preview 发布一次 `frame_update`，data 包含 device_id/snapshot_id/type/captured_at/url，不含 JPEG；timestamp 为平台时间。慢客户端沿用 Hub 的有界队列与关闭策略。
-- Windows 图片存储同步 JPEG 普通文件后以不可覆盖方式发布，避免对目录句柄调用不支持的 `Sync()`；Linux 继续同步文件和发布目录。两者均保留失败补偿，硬断电恢复不超出操作系统/文件系统能力；本次代码修复的运行回归延后。
+- Windows 图片存储同步 JPEG 普通文件后以不可覆盖方式发布，避免对目录句柄调用不支持的 `Sync()`；Linux 继续同步文件和发布目录。两者均保留失败补偿，硬断电恢复不超出操作系统/文件系统能力；Windows 与 Linux 的软件回归均已覆盖图片存储，硬断电仍需硬件验收。
 - 已登记的离线设备及运行中 MQTT 断线均可上传，图片不更新 online、last_seen_at 或配置版本。平台初次启动仍要求 Broker 连接成功。
-- 本轮图片持久保留，没有 TTL 或删除接口；拍照与告警引用校验见上节，鉴权接入见上节，容量清理留后续。真实 Broker、Docker、摄像头和树莓派尚未执行图片联调。
+- 图片持久保留，没有 TTL 或删除接口；拍照与告警引用校验见上节，鉴权接入见上节，容量清理留后续。软件图片的真实 Broker/Docker 链路可以无硬件验收；真实摄像头和树莓派仍待联调。
 
 ## 状态约定
 
@@ -241,12 +269,12 @@ curl -u "$PIGUARD_HTTP_PLATFORM_USERNAME:$PIGUARD_HTTP_PLATFORM_PASSWORD" http:/
 - 历史 start/end 接受 RFC3339 时间，包含端点；limit 默认 100，上限 1000。返回窗口内最新 N 条，按时间升序排列。
 - 平台重启保留历史和设备配置；最新遥测等待新消息。status 的 config_version 是设备报告，不能代替配置 Ack。
 
-## Broker 集成检查（后续验证）
+## 原生 Broker 集成检查（本地开发模式）
 
-实际 Broker 的集成检查会临时启动 Mosquitto 与后端子进程，并覆盖两个 WS 客户端、离线遗嘱、seq 重启、数据过期、平台重启和 Broker 重连：
+旧生命周期夹具显式启用 loopback 开发认证模式，会临时启动 Mosquitto 与后端子进程，并覆盖两个 WS 客户端、离线遗嘱、seq 重启、数据过期、平台重启和 Broker 重连。默认认证、设备 ACL 和 Compose 使用前面的 `TestDockerAcceptance`：
 
 ```sh
-MOSQUITTO_BIN="$(command -v mosquitto)" go test -tags integration ./internal/server -count=1 -v
+MOSQUITTO_BIN="$(command -v mosquitto)" go test -tags integration ./internal/server -run '^TestMonitoringBrokerLifecycle$' -count=1 -v
 ```
 
 该检查必须提供可运行的 Mosquitto；没有 Broker 不会将检查跳过后算作通过。

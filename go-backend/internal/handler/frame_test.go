@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -25,8 +26,10 @@ import (
 	"piguard/go-backend/internal/repo"
 	"piguard/go-backend/internal/service"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -544,10 +547,15 @@ func TestFramesHTTPRejectionAndStorageErrors(t *testing.T) {
 	_ = os.Remove(filepath.Join(f.dir, row.Path))
 	secret := filepath.Join(t.TempDir(), "secret.txt")
 	_ = os.WriteFile(secret, []byte("private-content"), 0600)
-	if err = os.Symlink(secret, filepath.Join(f.dir, row.Path)); err != nil {
-		t.Fatal(err)
-	}
-	f.expectError(t, path, 500, 50001)
+	t.Run("symlink escape", func(t *testing.T) {
+		if err := os.Symlink(secret, filepath.Join(f.dir, row.Path)); err != nil {
+			if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+				t.Skip("Windows lacks symlink privilege; covered by the Linux container suite")
+			}
+			t.Fatal(err)
+		}
+		f.expectError(t, path, 500, 50001)
+	})
 	if err = f.g.Model(&model.Snapshot{}).Where("snapshot_id = ?", created.SnapshotID).Update("path", secret).Error; err != nil {
 		t.Fatal(err)
 	}

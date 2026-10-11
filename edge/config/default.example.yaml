@@ -47,6 +47,7 @@ simulation:
   playback_speed: 1.0
 
 mapping:
+  # 桌面 HC-SR04 演示用 100。传感器直接测量车距时改为 1。处理层只乘这一次。
   distance_scale: 100
 
 runtime:
@@ -92,3 +93,25 @@ features:
   # 现有Go后端仍缺少这些能力，默认关闭。
   remote_config: false
   frame_upload: false
+
+# 实机接线。P1 起由加载器接受本段；mock 驱动不读取它。
+# 地址使用十进制：MPU6050 0x68=104，AHT20 0x38=56，BMP280 0x76=118。
+# 蜂鸣器与 LED 型号未定，这里不出现它们的引脚。
+hardware:
+  i2c_bus: 1
+  distance:
+    trigger_bcm: 23
+    echo_bcm: 24
+    max_distance_m: 4.0
+    pulse_timeout_ms: 30
+  gyro:
+    address: 104
+    yaw_axis: z
+    yaw_sign: 1
+    full_scale_dps: 500
+  temperature:
+    aht20_address: 56
+    bmp280_address: 118
+  camera:
+    width: 640
+    height: 480

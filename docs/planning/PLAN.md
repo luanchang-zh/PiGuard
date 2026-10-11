@@ -2,7 +2,7 @@
 
 ## 1. 目标与开发边界
 
-以 Raspberry Pi 4B、Raspberry Pi OS 64-bit 和 Python 为目标，先在开发电脑实现可重复的模拟边缘程序，再搬到树莓派，最后逐个替换真实驱动。硬件型号尚未确定，不提前固定引脚、供电方案或具体驱动。
+以 Raspberry Pi 4B、Raspberry Pi OS 64-bit 和 Python 为目标，先在开发电脑实现可重复的模拟边缘程序，再搬到树莓派，最后按已定型号替换真实驱动。引脚采用第 1.1 节的规划默认值，上板前对照实物确认。蜂鸣器和 LED 的型号尚未给出，不分配它们的引脚，也不写驱动。
 
 边缘端负责四类传感器（距离、摄像头、陀螺仪、温度）、逻辑车速源、OpenCV 车道检测、四类风险规则、蜂鸣器/LED、本地持久化、MQTT 上下行。Go 平台负责设备登记、查询、存储、命令生命周期和 WebSocket。规则判断留在边缘端，平台断网时本地仍工作。
 
@@ -11,7 +11,43 @@
 成功标准分两级：
 
 1. 软件闭环：六个确定性场景、四类本地预警、四种已支持的远程动作、遥测/状态/告警进入现有 Go 后端，断网和程序重启后可恢复缓存与命令去重。
-2. 完整课设：增加实际图像处理、四类真实传感器、蜂鸣器/LED、树莓派服务运行；配置同步和图像平台闭环在对应后端能力完成后验收。
+2. 完整课设：增加实际图像处理、四类真实传感器、蜂鸣器/LED、树莓派服务运行；配置同步和图像平台闭环在对应后端能力完成后验收。蜂鸣器/LED 仍要等执行器型号。
+
+## 1.1 已定硬件
+
+| 感知 | 实物 | 驱动落点 | 总线 |
+| --- | --- | --- | --- |
+| 距离 | HC-SR04，配套 8 路电压转换模块 | `drivers/distance/hcsr04.py`，gpiozero | GPIO 脉冲。Trig/Echo 经电平转换 |
+| 画面 | CSI 模块，传感器 OV5647IMXZ19 | `drivers/camera/ov5647.py`，Picamera2 | CSI。按 Camera v1 / libcamera `ov5647` |
+| 角速度 | GY-521，MPU6050，6 轴 | `drivers/gyro/mpu6050.py`，smbus2 | 硬件 I2C1 |
+| 车内温度 | AHT20+BMP280 模块中的 AHT20 | `drivers/temperature/aht20.py`，smbus2 | 硬件 I2C1，与陀螺仪共用 |
+
+8 路电压转换模块按双向电平转换使用：高压侧 5V，低压侧 3.3V，与树莓派、HC-SR04 共地。只接 Trig 和 Echo。其余六路空置，I2C 不经过它。HC-SR04 的 VCC 接树莓派 5V；Echo 在确认转换模块高低压侧之后才接到模块上，不直接进 GPIO。
+
+GY-521 与 AHT20+BMP280 优先用 3.3V 供电。上电前确认两块模块的 SDA/SCL 上拉不是 5V；若模块只有把上拉接到 VCC、而 VCC 又接了 5V，这组 I2C 不能接到树莓派。
+
+两个 I2C 器件共用 `drivers/i2c_bus.py` 里的一把锁。AHT20 测量约需 80ms，等待期间释放锁，避免挡住 50Hz 的 MPU6050 读取。启动时探测地址：MPU6050 默认 `0x68`（十进制 104，AD0 拉高则为 `0x69`），AHT20 为 `0x38`（56），BMP280 先试 `0x76`（118），没有再试 `0x77`（119）。MPU6050 以 WHO_AM_I 等于 `0x68` 作为器件确认。BMP280 只用来确认模块在线上，它的温度、气压以及 AHT20 的湿度都留在本地诊断，不写入 `Sample`，也不增加 MQTT 字段。现有 telemetry 的 `temperature` 仍是一个摄氏温度，`gyro` 仍是 x/y/z 加 `yaw_rate`。
+
+急转弯只用绕竖直轴的角速度。静止时用加速度判断哪一轴接近 1g，该轴就是竖直轴；若与配置的 `yaw_axis` 不一致，硬件检查失败，规则里不做静默对调。默认模块平放、`yaw_axis=z`、`yaw_sign=1`，量程 ±500 °/s，避免手持演示时 ±250 °/s 饱和。静止采集零偏后再输出。加速度不参与车速，角速度不积分成角度。
+
+OV5647 使用 15 针 CSI 排线，分辨率 640×480，采集 10FPS，处理 5FPS。Picamera2 的采集配置使用 `BGR888`，`Frame.image` 与 OpenCV 录像同为 BGR。开发电脑继续用合成图和本地录像；`VideoCapture(0)` 只作为没有 CSI 时的备用输入。
+
+HC-SR04 的 `raw_value` 是测得的米。桌面演示保持 `distance_scale=100`；传感器直接测量车距时改为 1。处理层只乘一次。量程按 0.02–4.00m，回波超时 30ms，超时则 `status=timeout`、值为空。10Hz 周期是 100ms，超时放在距离线程内。gpiozero 的 `DistanceSensor` 默认只测到 1m，驱动创建时必须传入配置中的 4.0。
+
+规划默认接线如下。这些编号写进配置，驱动从配置读取。实物若已另接，改配置，不改规则。
+
+| 信号 | BCM | 物理针 | 连接 |
+| --- | --- | --- | --- |
+| 5V | — | 2 | HC-SR04 VCC，电平转换模块 HV |
+| 3.3V | — | 1 | 电平转换模块 LV；两个 I2C 模块的 VCC（在确认上拉电压之后） |
+| GND | — | 6 | 传感器、转换模块、两个 I2C 模块共地 |
+| SDA | 2 | 3 | MPU6050 与 AHT20/BMP280 |
+| SCL | 3 | 5 | 同上 |
+| Trig | 23 | 16 | 树莓派 → 转换模块 → HC-SR04 Trig |
+| Echo | 24 | 18 | HC-SR04 Echo → 转换模块 → 树莓派 |
+| CSI | — | CSI 座 | OV5647 排线，触点朝向按座子标记 |
+
+树莓派配置启用 `i2c_arm` 和摄像头自动识别（或 `dtoverlay=ov5647`）。`gpiozero`、`smbus2` 放在可选依赖 `hardware`，Picamera2 用系统的 apt 包。mock 模式不导入这三项，开发电脑仍能启动。蜂鸣器与 LED 的 GPIO 保持未分配。
 
 ## 2. 阅读依据与后端事实
 
@@ -103,16 +139,16 @@ PiGuard/
 
 内部 `Sample[T]` 保留 value（可为空）、UTC 采样时间、monotonic_ns、source、status。统一单位为 m、km/h、C、deg/s。驱动返回实际距离 raw_value，processing 只映射一次得到 mapped_value，保留比例；场景的道路距离先换算成模拟原始距离，避免重复放大。
 
-用 DistanceSensor、CameraSource、GyroscopeSensor、TemperatureSensor、SpeedProvider 接口隔离型号。硬件库只由真实驱动加载，mock 模式在无 GPIO/Picamera2 的开发电脑也能启动。SpeedProvider 是逻辑数据源，不把陀螺仪当车速传感器。
+用 DistanceSensor、CameraSource、GyroscopeSensor、TemperatureSensor、SpeedProvider 接口隔离型号。硬件库只由 HC-SR04、OV5647、MPU6050、AHT20 四个真实驱动加载，mock 模式在无 GPIO/Picamera2 的开发电脑也能启动。SpeedProvider 是逻辑数据源。陀螺仪驱动输出三轴角速度，处理层按配置取出 `yaw_rate`。
 
 从线程与有界队列开始：每类采集 worker 独立更新 LatestState，规则 worker 读取快照，MQTT 网络循环独立，图像编码/HTTP 上传独立。摄像头阻塞或网络超时不能阻塞采样和输出。只有出现实测 CPU 瓶颈才把视觉处理移到独立进程。
 
 | 工作过程 | 初始频率 | 限制 |
 | --- | --- | --- |
 | 距离/车速 | 10Hz | 读取超时有界 |
-| 陀螺仪 | 50Hz | 有校准和轴向映射 |
-| 温度 | 1Hz | 按实际模块能力调整 |
-| 图像采集/车道分析 | 10FPS / 5—10FPS | 保留最新帧，丢弃积压旧帧 |
+| 陀螺仪 MPU6050 | 50Hz | I2C 锁；静止零偏；`yaw_axis` 映射 |
+| 温度 AHT20 | 1Hz | 测量等待约 80ms，等待时不占 I2C 锁 |
+| 图像采集/车道分析 | 10FPS / 5FPS | OV5647 640×480；保留最新帧；驱动输出 BGR |
 | RuleEngine | 10Hz | 单调时钟计时，不调用网络 |
 | telemetry/status | 2Hz / 状态变化加10s心跳 | 遥测仅发送最新数据 |
 | 图片预览（后续） | 1—2FPS | 有界、可丢弃，与事件队列分开 |
@@ -161,20 +197,30 @@ Ack 必须有 schema_version、command_id、device_id、status=success/failed、
 
 ## 6. 分阶段实施与验收
 
-按单人开发估算，模拟软件主线约 10—15 个工作日；具体硬件接入和平台未完成能力另计，以实际型号和环境为准。每阶段先完成可演示结果再扩大范围。
+按单人开发估算，模拟软件主线约 10—15 个工作日。四类已定传感器的实机接入另计约 3 个工作日，蜂鸣器/LED 和平台未完成能力不含在这 3 天内。每阶段先完成可演示结果再扩大范围。
 
 | 阶段 | 工作与主要目标文件 | 预计 | 完成门槛 |
 | --- | --- | --- | --- |
 | P0 工程骨架 | pyproject、目录、配置示例、规划和开发入口 | 0.5天 | 分支仅有共享文档与 edge；包导入、配置/结构静态检查通过 |
-| P1 本地数据链 | models/sample.py、drivers/base.py、simulation/engine.py/scenarios.py、runtime/state.py/workers.py、config/loader.py | 2天 | 无硬件运行六个可重复场景，所有源共享一个场景时钟；错误不变成0；停止场景恢复正常采样 |
+| P1 本地数据链 | models/sample.py、drivers/base.py、simulation/engine.py/scenarios.py、runtime/state.py/workers.py、config/loader.py | 2天 | 无硬件运行六个可重复场景，所有源共享一个场景时钟；错误不变成0；停止场景恢复正常采样。加载器接受 `hardware` 配置段，mock 驱动不读取它 |
 | P2 上行最小闭环 | protocol/telemetry.py/status.py、transport/mqtt.py、runtime/app.py、CLI入口 | 1—2天 | Python→真实Broker→Go→HTTP/WS；2Hz遥测、在线/遗嘱、故障/null、TTL、seq重启和重连通过；规则未完成时risk=unknown |
 | P3 本地预警与事件 | processing/distance.py/gyro.py、rules/engine.py及四规则、actuators/manager.py/mock.py、storage/events.py、protocol/event.py | 2—3天 | 四种危险及恢复可复现，只在状态改变时发事件；断网时规则/模拟输出不断，重连同ID补传且平台只存一条 |
 | P4 下行真实软件行为 | commands/handler.py、storage/commands.py、protocol/command.py、执行器仲裁 | 2天 | 四类命令改变真实模拟状态/输出，HTTP查询与双WS可见Ack；重复、过期、非法、重启及执行中崩溃场景通过 |
 | P5 视觉边缘计算 | drivers/camera/synthetic.py/video.py、processing/lane.py、Frame/LaneResult | 2—3天 | 合成道路和本地录像实际经过ROI/灰度/模糊/Canny/Hough；左右线缺失为invalid；偏移方向、持续阈值、视频结束与释放资源通过 |
-| P6 真实驱动 | USB/CSI摄像头、实际距离/陀螺仪/温度驱动、GPIO输出 | 型号确定后估算 | 逐个真实源与mock其余源联调；确认电压/电平/接线、距离比例、陀螺轴向/零偏、超时、拔出和恢复 |
+| P6 真实驱动 | `drivers/i2c_bus.py`、`hcsr04.py`、`ov5647.py`、`mpu6050.py`、`aht20.py`；配置中的地址和 BCM | 约 3 天，树莓派在手之后 | 一次只换一路，其余保持 mock。顺序和通过条件见下文 |
 | P7 设备部署与完整联调 | deploy/systemd/piguard-edge.service、设备安装/诊断脚本、树莓派配置 | 1—2天，硬件可用后 | 开机启动、崩溃重启、断网启动、正常停止释放输出；Pi4B实测频率、温度/内存、30分钟运行和缓存恢复 |
 
-P1/P3 的车道结果先由场景提供模拟 LaneResult；P5 再让合成图像与录像实际经过 OpenCV，不能将前面的模拟结果计为图像算法通过。
+P6 在树莓派上按下面的顺序做。每一路通过后才接下一路线，失败的那一路回到 mock。蜂鸣器和 LED 不在这个顺序里。
+
+1. 未接 Echo 之前，先确认电平转换模块的 HV 为 5V、LV 为 3.3V，并确认两块 I2C 模块的时钟数据线不是 5V。然后 `i2cdetect -y 1` 应看到 `0x38`、`0x68`，以及 `0x76` 或 `0x77`。
+2. AHT20：1Hz 读出摄氏温度；手温能使读数上升。报文里的温度只来自这一路。BMP280 在线即可，它的温度不进入 `Sample`。
+3. MPU6050：静止零偏后 `yaw_rate` 接近 0。绕竖直轴转动时，配置指定的轴变号，量程内不饱和。静止时约 1g 的加速度轴必须与 `yaw_axis` 一致，否则停止这一路并改配置，不在规则里对调。
+4. HC-SR04：Echo 经转换模块进入 BCM24。正对平面目标时，0.20m 与 1.00m 的 `raw_value` 误差在 ±0.03m 内；遮住探头或超出 4m 为 timeout，值为空。桌面演示的 `mapped_value` 仍按 scale 100。
+5. OV5647：Picamera2 按 `BGR888` 输出 640×480。排线触点方向错误会表现为设备不存在，先断电再重插。这一路通过后再把画面送进 P5 的车道处理。
+
+拔出任一 I2C 模块或断开 Echo 时，对应 `Sample.status` 变为 `unavailable` 或 `timeout`，其他传感器继续采样。进程退出时释放 GPIO、关闭摄像头并放开 I2C。
+
+P1/P3 的车道结果先由场景提供模拟 LaneResult；P5 再让合成图像与录像实际经过 OpenCV，不能将前面的模拟结果计为图像算法通过。OV5647 实拍进入同一条处理函数，不另写一套车道算法。
 
 P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite；真实 Broker 检查在联调环境可用时单独执行并保存结果。Go 模拟器只用于对照 payload，同一设备联调时关闭它。
 
@@ -202,6 +248,6 @@ P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite�
 - unit：fake clock 驱动阈值、持续时间、恢复、过滤、映射、场景一致性和优先级；不依赖硬件或网络。
 - contract：逐条对齐此基线的 Go 解析器，覆盖完整/故障telemetry、在线/遗嘱status、四类command/Ack、事件恢复与非法字段；以 Go 实际接受/拒绝结果建立黄金样例，避免两端自测互相误解。
 - integration：Python+实际Broker+Go独立服务+HTTP/双WS；覆盖断网、平台/Broker/设备重启、同ID补传、命令去重及磁盘/数据库异常。
-- hardware：按实购型号在Pi执行，记录量程、采样误差、轴向、驱动超时、GPIO释放和资源负载，不把mock成功记成硬件通过。
+- hardware：在树莓派上按 P6 的五步执行，记录 I2C 地址、零偏、竖直轴、HC-SR04 误差、Echo 超时、OV5647 分辨率与 BGR、GPIO/摄像头释放。mock 通过不算硬件通过。执行器型号未定，不测蜂鸣器和 LED。
 
 第一笔业务开发从 P1 开始：Sample/Frame/LaneResult → 驱动接口与六个场景 → 配置校验与LatestState/worker → fake-clock验证；完成后才接P2网络。Python运行时依赖在相应阶段核对官方/Context7文档并锁定，当前骨架没有安装或接入这些库。

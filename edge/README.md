@@ -26,6 +26,7 @@ Python边缘工程，开发分支为 `edge`。完整开发顺序和实际Go契�
 
 ## 工程约定
 
+- 实机型号为 HC-SR04（配 8 路电平转换模块）、CSI 传感器 OV5647IMXZ19、GY-521 MPU6050、AHT20+BMP280 模块中的 AHT20。默认配置仍是 mock。接线、地址和上板顺序见开发规划第 1.1 节与 P6。
 - Python目标版本≥3.11。pyproject仅描述可安装包，运行时依赖将在对应阶段锁定；Picamera2/GPIO等硬件依赖不能阻止mock启动。
 - 配置文件相对路径按配置文件目录解析。示例的 `../data/edge.db` 指向edge/data。
 - 本地覆盖使用config/local.yaml或环境变量，真实凭据、数据库、大视频和截图不进Git。

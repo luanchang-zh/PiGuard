@@ -10,4 +10,4 @@
 - [课程设计方案](docs/constraints/raspberry_pi_adas_course_design.md)：课设整体约束。
 - [网络交互规范](docs/constraints/adas_network_api_spec.md)：网络交互整体约束。
 
-当前交付为规划和目录骨架，采集、规则、MQTT 和硬件驱动将在后续阶段实现。共享文档继承自 `main`；与已完成 Go 后端的契约差异见开发规划。
+当前交付为规划和目录骨架。四类传感器型号已写入课设规范和开发规划：HC-SR04、OV5647、MPU6050、AHT20。采集、规则、MQTT 和硬件驱动将在后续阶段实现。共享文档继承自 `main`；与已完成 Go 后端的契约差异见开发规划。

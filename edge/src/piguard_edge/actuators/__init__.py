@@ -1,1 +1,1 @@
-"""Mock or hardware outputs and warning priority arbitration (planned)."""
+"""Mock warning output. Hardware pins stay unassigned."""

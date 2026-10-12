@@ -9,7 +9,9 @@ from piguard_edge.protocol.topics import commands_topic, status_topic, telemetry
 from piguard_edge.runtime.app import EdgeApp
 from piguard_edge.runtime.clock import FakeClock
 from piguard_edge.runtime.state import LatestState
+from piguard_edge.runtime.workers import Sampler
 from piguard_edge.simulation.engine import ScenarioEngine
+from piguard_edge.storage.events import EventStore
 from piguard_edge.transport.mqtt import FakeMqtt, PahoMqtt
 
 def _ids():
@@ -26,11 +28,9 @@ def _app(example_config, scenario: str = "normal_drive"):
     clock = FakeClock()
     config = example_config
     engine = ScenarioEngine(scenario, 1.0)
-    from piguard_edge.runtime.workers import Sampler
-
     sampler = Sampler.from_config(config, engine, clock)
     transport = FakeMqtt()
-    app = EdgeApp(config, clock, transport, sampler, _ids())
+    app = EdgeApp(config, clock, transport, sampler, _ids(), store=EventStore(":memory:"))
     return app, clock, transport
 
 
@@ -92,7 +92,8 @@ def test_two_hertz_telemetry_uses_latest_sample_and_keeps_sample_at(example_conf
     assert messages[1]["speed"]["value"] == 30
     assert messages[1]["distance"]["raw_value"] == 0.5
     assert messages[1]["distance"]["mapped_value"] == 50
-    assert messages[1]["risk"] == {"level": "unknown", "active_events": []}
+    assert messages[0]["risk"] == {"level": "unknown", "active_events": []}
+    assert messages[1]["risk"] == {"level": "normal", "active_events": []}
     assert messages[0]["message_id"] == "msg-1"
 
 

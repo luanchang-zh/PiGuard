@@ -2,7 +2,7 @@
 
 ## 目标与当前状态
 
-P1 本地数据链和 P2 上行软件路径已实现。遥测、在线状态、遗嘱、2 Hz 发布和 `python -m piguard_edge` 已有 fake transport 测试，并用 Go 解析器核对过样例。规则、命令执行、真实 Broker 联调和硬件驱动仍未做。步骤见 `docs/planning/implementation/p2-uplink.md`。
+P1 到 P3 的软件路径已实现。四条规则、模拟执行器和事件缓存已有 fake clock、临时 SQLite 和 Go 事件解析器测试。命令执行、HTTP 入库确认、真实 Broker 联调和硬件驱动仍未做。步骤见 `docs/planning/implementation/p3-local-warnings.md`。
 
 当前分支 `edge` 从 `main@e975d4b51d0dd5d42b9c1f1bb1e8ae0c1f0a6113` 创建。后端分支仍为 `go后端开发@0e65a536a3fe01ae4a866bbe91b695ea25f3623b`。
 
@@ -11,7 +11,8 @@ P1 本地数据链和 P2 上行软件路径已实现。遥测、在线状态、�
 - `docs/planning/PLAN.md`：总规范。后端事实、契约差异、已定硬件、P0—P7 和验收门槛。
 - `docs/planning/implementation/pc-edge-software.md`：开发电脑上的实施计划。P1 已完成。P2 软件路径见同目录 `p2-uplink.md`。
 - `docs/planning/implementation/p2-uplink.md`：P2 上行实施计划。软件路径已完成。
-- `docs/verification/unit/p2-uplink.md`、`docs/verification/contract/p2-telemetry.md`：P2 单元和契约报告。联调与硬件报告尚未产生。
+- `docs/planning/implementation/p3-local-warnings.md`：P3 本地预警实施计划。软件路径已完成。
+- `docs/verification/unit/p3-local-warnings.md`、`docs/verification/contract/p3-events.md`：P3 单元和契约报告。联调与硬件报告尚未产生。
 - `docs/constraints/raspberry_pi_adas_course_design.md`：课设约束。传感器型号写在概述、技术栈和第 8、11–14 节。网络规范未改，湿度、气压、加速度不上报文。
 - `edge/README.md`：模块边界和入口。`edge/config/default.example.yaml` 可由 `config/loader.py` 加载；同目录 `local.yaml` 深合并覆盖，且不进 Git。
 - 后端已完成telemetry/status、四类动作/Ack、events；配置/图片仍不可用。
@@ -22,7 +23,7 @@ P1 本地数据链和 P2 上行软件路径已实现。遥测、在线状态、�
 
 ## 下一步
 
-下一步做 P3 本地预警：距离与角速度处理、四条规则、模拟执行器和事件缓存。真实 Broker 联调留到 Broker 与 Go 服务都可到达时再单独记录。同一 `car-001` 不同时运行 Go 模拟器。P6 等树莓派在手后按总规范顺序接入，执行器继续等待型号。
+下一步做 P4 下行命令：四种已支持动作、命令去重、Ack，以及模拟执行器上的人工测试仲裁。真实 Broker 联调留到 Broker 与 Go 服务都可到达时再单独记录。同一 `car-001` 不同时运行 Go 模拟器。P6 等树莓派在手后按总规范顺序接入，执行器继续等待型号。
 
 P1 里已经定下、后续不要另起一套的行为：
 
@@ -33,6 +34,12 @@ P1 里已经定下、后续不要另起一套的行为：
 - 模拟源的 `source` 都是 `mock`。配置里的 `scenario` / `synthetic` 只选择驱动，不写进样本。
 - 道路距离先除以 `distance_scale` 得到 raw，处理层再乘一次。mock 不读取 `hardware`；`yaw_axis` / `yaw_sign` 由采样器从配置取出。
 
+P3 里已经定下、后续不要另起一套的行为：
+
+- 障碍物按映射距离立即分级，并在速度大于 0 时与时距取更高一级。车道、急转弯、高温才使用持续时间。33 °C 到 35 °C 之间不触发高温，也不累计解除。
+- 过期样本中断 pending，事件 `data.reason` 写 `stale`。遥测 status 仍然只有 ok/timeout/unavailable/error。
+- 事件先写入 SQLite。HTTP 入库确认还没有做，所以重连按原 payload 再发，未确认的行不删除。
+
 ## 验证
 
-2026-10-12 在 Python 3.13.12、pytest 9.1.1、go1.26.1 下执行 `python -m pytest tests/unit tests/contract -v`，43 项通过。记录见 `docs/verification/unit/p2-uplink.md` 与 `docs/verification/contract/p2-telemetry.md`。未连接 Broker，未启动 Go 服务，未上电，未使用树莓派、GPIO 或摄像头。
+2026-10-12 在 Python 3.13.12、pytest 9.1.1、go1.26.1 下执行 `python -m pytest tests/unit tests/contract -q --tb=line`，63 项通过，耗时 9.38 秒。记录见 `docs/verification/unit/p3-local-warnings.md` 与 `docs/verification/contract/p3-events.md`。未连接 Broker，未启动 Go 服务，未做 HTTP 事件确认，未上电，未使用树莓派、GPIO 或摄像头。

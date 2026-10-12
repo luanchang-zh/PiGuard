@@ -1,1 +1,1 @@
-"""Local warning state machines and risk aggregation (planned)."""
+"""Local warning state machines and one combined risk level."""

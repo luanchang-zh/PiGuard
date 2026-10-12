@@ -12,27 +12,41 @@ from pathlib import Path
 import pytest
 
 from piguard_edge.models.sample import UNIT_M, Sample, SampleStatus
+from piguard_edge.protocol.event import make_event
 from piguard_edge.protocol.status import build_online_status, build_will
 from piguard_edge.protocol.telemetry import build_telemetry
-from piguard_edge.protocol.topics import status_topic, telemetry_topic
+from piguard_edge.protocol.topics import events_topic, status_topic, telemetry_topic
 from piguard_edge.runtime.clock import FakeClock
 from piguard_edge.runtime.state import LatestState
 
 REPO = Path(__file__).resolve().parents[3]
 HARNESS = Path(__file__).resolve().parent / "go_harness" / "parser_test.go"
-PARSER = "go后端开发:go-backend/internal/protocol/telemetry.go"
+PARSERS = (
+    "go后端开发:go-backend/internal/protocol/telemetry.go",
+    "go后端开发:go-backend/internal/protocol/event.go",
+    "go后端开发:go-backend/internal/protocol/command.go",
+)
+FRAME_IDENTITY = '''package protocol
+
+import "regexp"
+
+var frameIdentity = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+'''
 
 
 def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_config) -> None:
     go = shutil.which("go")
     if go is None:
         pytest.skip("go is not installed")
-    source = subprocess.run(
-        ["git", "show", PARSER],
-        cwd=REPO,
-        check=True,
-        capture_output=True,
-    ).stdout
+    sources = {
+        Path(ref).name: subprocess.run(
+            ["git", "show", ref],
+            cwd=REPO,
+            check=True,
+            capture_output=True,
+        ).stdout
+        for ref in PARSERS
+    }
     clock = FakeClock()
     normal = build_telemetry(
         _ready_state(clock),
@@ -85,6 +99,17 @@ def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_confi
             {"topic": status_topic("car-001"), "body": stale},
             {"topic": status_topic("car-001"), "body": incomplete_online},
         ],
+        "accept_event": [
+            {"topic": events_topic("car-001"), "body": _event(clock, "evt-obstacle", "obstacle_warning", "started", "danger", {"distance_m": 6.8, "speed_kmh": 32.0, "headway_s": 0.76})},
+            {"topic": events_topic("car-001"), "body": _event(clock, "evt-temp", "high_temperature", "recovered", "warning", {"temperature_c": 32.0})},
+            {"topic": events_topic("car-001"), "body": _event(clock, "evt-sensor", "sensor_failure", "started", "warning", {"sensor": "distance", "reason": "stale"})},
+        ],
+        "reject_event": [
+            {"topic": events_topic("car-001"), "body": {**_event(clock, "evt-bad-data", "lane_departure", "started", "warning", {"offset_ratio": 0.4}), "data": []}},
+            {"topic": events_topic("car-001"), "body": {**_event(clock, "evt-bad-level", "lane_departure", "recovered", "warning", {"offset_ratio": 0.0}), "level": "normal"}},
+            {"topic": events_topic("car-001"), "body": {**_event(clock, "evt-extra", "sharp_turn", "started", "warning", {"yaw_rate_deg_s": 35.0}), "incident_id": "nope"}},
+            {"topic": "car/car-002/events", "body": _event(clock, "evt-topic", "sensor_failure", "started", "warning", {"sensor": "gyro", "reason": "error"})},
+        ],
     }
     from tempfile import TemporaryDirectory
 
@@ -92,7 +117,9 @@ def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_confi
         root = Path(directory)
         package = root / "protocol"
         package.mkdir()
-        (package / "telemetry.go").write_bytes(source)
+        for name, source in sources.items():
+            (package / name).write_bytes(source)
+        (package / "frame_identity.go").write_text(FRAME_IDENTITY, encoding="utf-8")
         (package / "parser_test.go").write_text(HARNESS.read_text(encoding="utf-8"), encoding="utf-8")
         payloads = root / "payloads.json"
         payloads.write_text(json.dumps(fixtures), encoding="utf-8")
@@ -105,6 +132,19 @@ def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_confi
             env={**dict(**_env()), "PAYLOADS": str(payloads)},
         )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def _event(clock: FakeClock, event_id: str, event_type: str, action: str, level: str, data: dict[str, object]) -> dict[str, object]:
+    event = make_event(
+        device_id="car-001",
+        event_id=event_id,
+        event_type=event_type,
+        action=action,
+        level=level,
+        timestamp=clock.utc(),
+        data=data,
+    )
+    return json.loads(event.payload.decode("utf-8"))
 
 
 def _ready_state(clock: FakeClock) -> LatestState:

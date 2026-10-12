@@ -11,6 +11,8 @@ type fixtureFile struct {
 	RejectTelemetry []fixture `json:"reject_telemetry"`
 	AcceptStatus    []fixture `json:"accept_status"`
 	RejectStatus    []fixture `json:"reject_status"`
+	AcceptEvent     []fixture `json:"accept_event"`
+	RejectEvent     []fixture `json:"reject_event"`
 }
 
 type fixture struct {
@@ -45,6 +47,16 @@ func TestFixtures(t *testing.T) {
 	for i, item := range file.RejectStatus {
 		if _, err := ParseStatus(item.Topic, item.Body); err == nil {
 			t.Fatalf("reject status %d was accepted\n%s", i, item.Body)
+		}
+	}
+	for i, item := range file.AcceptEvent {
+		if _, err := ParseEvent(item.Topic, item.Body); err != nil {
+			t.Fatalf("accept event %d: %v\n%s", i, err, item.Body)
+		}
+	}
+	for i, item := range file.RejectEvent {
+		if _, err := ParseEvent(item.Topic, item.Body); err == nil {
+			t.Fatalf("reject event %d was accepted\n%s", i, item.Body)
 		}
 	}
 }

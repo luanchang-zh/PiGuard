@@ -1,1 +1,1 @@
-"""Independent edge SQLite persistence (planned)."""
+"""Edge SQLite cache for events that still need a platform confirmation."""

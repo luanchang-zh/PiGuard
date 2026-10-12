@@ -11,3 +11,7 @@ def status_topic(device_id: str) -> str:
 
 def commands_topic(device_id: str) -> str:
     return f"car/{device_id}/commands"
+
+
+def events_topic(device_id: str) -> str:
+    return f"car/{device_id}/events"

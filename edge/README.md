@@ -2,7 +2,7 @@
 
 Python边缘工程，开发分支为 `edge`。总规范见[开发规划](../docs/planning/PLAN.md)，当前实施步骤见[开发电脑上的实施计划](../docs/planning/implementation/pc-edge-software.md)，接续状态见[HANDOFF](../HANDOFF.md)。课设与网络规范在 `docs/constraints/`。
 
-P1 已实现模型、mock 采集、六个场景、配置加载和 LatestState。没有 CLI、MQTT、规则或硬件驱动。下一步是 P2 上行。单元测试在 `tests/unit/`，运行报告见 [P1 单元测试报告](../docs/verification/unit/p1-local-data-chain.md)。
+P1 已实现本地模拟数据链。P2 已实现遥测/状态编码、MQTT 会话和 `python -m piguard_edge`。规则和硬件驱动还没有。测试报告见 [P1](../docs/verification/unit/p1-local-data-chain.md) 与 [P2](../docs/verification/unit/p2-uplink.md)。
 
 ## 模块职责
 

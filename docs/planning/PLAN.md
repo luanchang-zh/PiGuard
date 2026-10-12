@@ -100,11 +100,15 @@ PiGuard/
 │   ├── planning/
 │   │   ├── PLAN.md           # 总规范：契约、硬件、阶段门槛、验收
 │   │   └── implementation/   # 按阶段的可执行实施计划
-│   │       └── pc-edge-software.md
+│   │       ├── pc-edge-software.md
+│   │       └── p2-uplink.md
 │   └── verification/         # 测试运行报告，代码仍在 edge/tests
 │       ├── README.md
-│       └── unit/
-│           └── p1-local-data-chain.md
+│       ├── unit/
+│       │   ├── p1-local-data-chain.md
+│       │   └── p2-uplink.md
+│       └── contract/
+│           └── p2-telemetry.md
 └── edge/
     ├── README.md
     ├── pyproject.toml
@@ -139,7 +143,7 @@ PiGuard/
     └── data/            # edge.db/缓存/日志，运行数据不进 Git
 ```
 
-目录骨架在 P0 建立。P1 已实现模型、mock 驱动、六个场景、配置加载和 LatestState。P2 及之后点名的文件仍未实现。
+目录骨架在 P0 建立。P1 已实现模型、mock 驱动、六个场景、配置加载和 LatestState。P2 已实现遥测/状态编码、MQTT 会话和进程入口。P3 及之后点名的文件仍未实现。
 
 ## 4. 核心模型、职责与并发
 
@@ -256,4 +260,4 @@ P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite�
 - integration：Python+实际Broker+Go独立服务+HTTP/双WS；覆盖断网、平台/Broker/设备重启、同ID补传、命令去重及磁盘/数据库异常。报告放 `docs/verification/integration/`。
 - hardware：在树莓派上按 P6 的五步执行，记录 I2C 地址、零偏、竖直轴、HC-SR04 误差、Echo 超时、OV5647 分辨率与 BGR、GPIO/摄像头释放。mock 通过不算硬件通过。执行器型号未定，不测蜂鸣器和 LED。报告放 `docs/verification/hardware/`。
 
-同一阶段、同一层只保留最新一份报告。P1 单元结果见 `docs/verification/unit/p1-local-data-chain.md`。P1 运行时依赖已锁定 PyYAML==6.0.3，开发依赖锁定 pytest==9.1.1。下一步才接 P2 网络。
+同一阶段、同一层只保留最新一份报告。P1 单元结果见 `docs/verification/unit/p1-local-data-chain.md`。P2 软件结果见 `docs/verification/unit/p2-uplink.md` 与 `docs/verification/contract/p2-telemetry.md`。运行时依赖已锁定 PyYAML==6.0.3 与 paho-mqtt==2.1.0，开发依赖锁定 pytest==9.1.1。真实 Broker 联调尚未执行。

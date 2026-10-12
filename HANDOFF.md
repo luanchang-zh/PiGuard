@@ -2,15 +2,16 @@
 
 ## 目标与当前状态
 
-P1 本地数据链已实现：模型、五类 mock 源、六个场景、YAML 加载和 LatestState。规则、MQTT、CLI 和硬件驱动仍未实现。实施步骤见 `docs/planning/implementation/pc-edge-software.md`。
+P1 本地数据链和 P2 上行软件路径已实现。遥测、在线状态、遗嘱、2 Hz 发布和 `python -m piguard_edge` 已有 fake transport 测试，并用 Go 解析器核对过样例。规则、命令执行、真实 Broker 联调和硬件驱动仍未做。步骤见 `docs/planning/implementation/p2-uplink.md`。
 
 当前分支 `edge` 从 `main@e975d4b51d0dd5d42b9c1f1bb1e8ae0c1f0a6113` 创建。后端分支仍为 `go后端开发@0e65a536a3fe01ae4a866bbe91b695ea25f3623b`。
 
 ## 重要文件与已确定事项
 
 - `docs/planning/PLAN.md`：总规范。后端事实、契约差异、已定硬件、P0—P7 和验收门槛。
-- `docs/planning/implementation/pc-edge-software.md`：开发电脑上的实施计划。P1 已完成。P2 起另写同目录文件。
-- `docs/verification/unit/p1-local-data-chain.md`：P1 单元测试报告。契约、联调和硬件报告尚未产生。
+- `docs/planning/implementation/pc-edge-software.md`：开发电脑上的实施计划。P1 已完成。P2 软件路径见同目录 `p2-uplink.md`。
+- `docs/planning/implementation/p2-uplink.md`：P2 上行实施计划。软件路径已完成。
+- `docs/verification/unit/p2-uplink.md`、`docs/verification/contract/p2-telemetry.md`：P2 单元和契约报告。联调与硬件报告尚未产生。
 - `docs/constraints/raspberry_pi_adas_course_design.md`：课设约束。传感器型号写在概述、技术栈和第 8、11–14 节。网络规范未改，湿度、气压、加速度不上报文。
 - `edge/README.md`：模块边界和入口。`edge/config/default.example.yaml` 可由 `config/loader.py` 加载；同目录 `local.yaml` 深合并覆盖，且不进 Git。
 - 后端已完成telemetry/status、四类动作/Ack、events；配置/图片仍不可用。
@@ -21,7 +22,7 @@ P1 本地数据链已实现：模型、五类 mock 源、六个场景、YAML 加
 
 ## 下一步
 
-另写 P2 实施文件，再实现遥测/状态编解码、MQTT 和进程入口。规则未完成时 `risk=unknown`。同一 `car-001` 不同时运行 Go 模拟器。P6 等树莓派在手后按总规范顺序接入，执行器继续等待型号。
+下一步做 P3 本地预警：距离与角速度处理、四条规则、模拟执行器和事件缓存。真实 Broker 联调留到 Broker 与 Go 服务都可到达时再单独记录。同一 `car-001` 不同时运行 Go 模拟器。P6 等树莓派在手后按总规范顺序接入，执行器继续等待型号。
 
 P1 里已经定下、后续不要另起一套的行为：
 
@@ -34,4 +35,4 @@ P1 里已经定下、后续不要另起一套的行为：
 
 ## 验证
 
-2026-10-12 在 Python 3.13.12、pytest 9.1.1 下执行 `python -m pytest tests/unit -v`，29 项通过；`PYTHONPATH=src` 导入 `piguard_edge` 得到 `0.0.0`。记录见 `docs/verification/unit/p1-local-data-chain.md`。未连接 Broker，未运行 Go 测试，未上电，未使用树莓派、GPIO 或摄像头。
+2026-10-12 在 Python 3.13.12、pytest 9.1.1、go1.26.1 下执行 `python -m pytest tests/unit tests/contract -v`，43 项通过。记录见 `docs/verification/unit/p2-uplink.md` 与 `docs/verification/contract/p2-telemetry.md`。未连接 Broker，未启动 Go 服务，未上电，未使用树莓派、GPIO 或摄像头。

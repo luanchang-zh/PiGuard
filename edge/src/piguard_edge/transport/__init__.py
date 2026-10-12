@@ -1,1 +1,1 @@
-"""MQTT lifecycle and HTTP transport adapters (planned)."""
+"""MQTT connection, will, and publish. Command handling comes later."""

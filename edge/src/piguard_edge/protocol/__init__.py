@@ -1,1 +1,1 @@
-"""MQTT v1 wire models, codecs and contract validation (planned)."""
+"""MQTT v1 topic names and payload encoding."""

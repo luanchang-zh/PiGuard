@@ -50,7 +50,7 @@ class Sampler:
     @classmethod
     def from_config(cls, config: EdgeConfig, engine: ScenarioEngine, clock: Clock) -> "Sampler":
         if config.device.mode != "mock":
-            raise ValueError("P1 sampler only runs mode=mock")
+            raise ValueError("sampler only runs mode=mock")
         sources = build_sources(
             engine,
             distance_scale=config.mapping.distance_scale,

@@ -12,4 +12,4 @@
 - [课程设计方案](docs/constraints/raspberry_pi_adas_course_design.md)：课设整体约束。
 - [网络交互规范](docs/constraints/adas_network_api_spec.md)：网络交互整体约束。
 
-当前 P1 已实现开发电脑上的模拟数据链。四类传感器型号已写入课设规范和开发规划：HC-SR04、OV5647、MPU6050、AHT20。规则、MQTT 和硬件驱动仍在后续阶段。共享文档继承自 `main`；与已完成 Go 后端的契约差异见开发规划。
+当前已完成开发电脑上的模拟数据链，以及遥测/状态上行的软件路径。四类传感器型号已写入课设规范和开发规划：HC-SR04、OV5647、MPU6050、AHT20。规则、真实 Broker 联调和硬件驱动仍在后续阶段。共享文档继承自 `main`；与已完成 Go 后端的契约差异见开发规划。

@@ -17,3 +17,5 @@ docs/verification/
 当前记录：
 
 - [P1 单元测试](unit/p1-local-data-chain.md)
+- [P2 单元测试](unit/p2-uplink.md)
+- [P2 契约测试](contract/p2-telemetry.md)

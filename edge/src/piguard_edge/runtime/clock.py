@@ -1,5 +1,6 @@
-"""Monotonic clocks. Tests inject FakeClock; sampling never reads the wall clock itself."""
+"""Monotonic clocks. Tests inject FakeClock; the process uses SystemClock."""
 
+import time
 from datetime import datetime, timedelta, timezone
 
 
@@ -18,3 +19,11 @@ class FakeClock:
 
     def advance_ns(self, nanoseconds: int) -> None:
         self._ns += nanoseconds
+
+
+class SystemClock:
+    def monotonic_ns(self) -> int:
+        return time.monotonic_ns()
+
+    def utc(self) -> datetime:
+        return datetime.now(timezone.utc)

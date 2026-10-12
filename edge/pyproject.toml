@@ -8,7 +8,14 @@ version = "0.0.0"
 description = "PiGuard Raspberry Pi edge application scaffold"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "PyYAML==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -85,7 +85,7 @@ HC-SR04 的 `raw_value` 是测得的米。桌面演示保持 `distance_scale=100
 
 新分支为 `edge`，基点是 `main` 的 `e975d4b51d0dd5d42b9c1f1bb1e8ae0c1f0a6113`。选择 main 而非 Go 分支作为父分支，使本分支无需携带后端代码和其开发提交。
 
-职责边界：边缘源码/配置/测试/设备部署全部放在 `edge/`；永久规划放 `docs/planning/PLAN.md`；进度和下一步只放根目录 `HANDOFF.md`。课设方案与网络规范作为整体约束，放在 `docs/constraints/`，与本分支实施规划分开。需要修改 Go 能力时切到后端分支完成，再由统一集成分支合并两端；不在边缘分支改 Go。
+职责边界：边缘源码/配置/测试/设备部署全部放在 `edge/`。`docs/planning/PLAN.md` 是总规范，保存契约、硬件、阶段门槛和验收。按阶段可执行的实施计划放在 `docs/planning/implementation/`，当前一份是 `pc-edge-software.md`；后续阶段另写 `pN-短名.md`，不改写本文件的阶段定义。测试代码放在 `edge/tests/`，对应运行报告放在 `docs/verification/`，按 unit、contract、integration、hardware 分层，文件名 `pN-短名.md`。进度和下一步只放根目录 `HANDOFF.md`。课设方案与网络规范作为整体约束，放在 `docs/constraints/`。需要修改 Go 能力时切到后端分支完成，再由统一集成分支合并两端；不在边缘分支改 Go。
 
 联调使用另一独立后端 checkout，或已运行的后端服务，通过 MQTT/HTTP 通信。当前 checkout 用于边缘开发。不要为联调将 go-backend 拷入 edge，不使用对方的数据库文件，不对同一 device_id 同时运行 Go 模拟器与 Python 边缘端，否则状态和遗嘱会互相覆盖。
 
@@ -97,8 +97,14 @@ PiGuard/
 │   ├── constraints/          # 课设与网络交互的整体约束
 │   │   ├── raspberry_pi_adas_course_design.md
 │   │   └── adas_network_api_spec.md
-│   └── planning/             # 当前树莓派边缘端实施规划
-│       └── PLAN.md
+│   ├── planning/
+│   │   ├── PLAN.md           # 总规范：契约、硬件、阶段门槛、验收
+│   │   └── implementation/   # 按阶段的可执行实施计划
+│   │       └── pc-edge-software.md
+│   └── verification/         # 测试运行报告，代码仍在 edge/tests
+│       ├── README.md
+│       └── unit/
+│           └── p1-local-data-chain.md
 └── edge/
     ├── README.md
     ├── pyproject.toml
@@ -133,7 +139,7 @@ PiGuard/
     └── data/            # edge.db/缓存/日志，运行数据不进 Git
 ```
 
-目录已用包标记和说明文件建立；下面提到的具体业务文件是后续实施目标，不表示已经实现。
+目录骨架在 P0 建立。P1 已实现模型、mock 驱动、六个场景、配置加载和 LatestState。P2 及之后点名的文件仍未实现。
 
 ## 4. 核心模型、职责与并发
 
@@ -245,9 +251,9 @@ P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite�
 
 ## 8. 验证组织与下一次开发入口
 
-- unit：fake clock 驱动阈值、持续时间、恢复、过滤、映射、场景一致性和优先级；不依赖硬件或网络。
-- contract：逐条对齐此基线的 Go 解析器，覆盖完整/故障telemetry、在线/遗嘱status、四类command/Ack、事件恢复与非法字段；以 Go 实际接受/拒绝结果建立黄金样例，避免两端自测互相误解。
-- integration：Python+实际Broker+Go独立服务+HTTP/双WS；覆盖断网、平台/Broker/设备重启、同ID补传、命令去重及磁盘/数据库异常。
-- hardware：在树莓派上按 P6 的五步执行，记录 I2C 地址、零偏、竖直轴、HC-SR04 误差、Echo 超时、OV5647 分辨率与 BGR、GPIO/摄像头释放。mock 通过不算硬件通过。执行器型号未定，不测蜂鸣器和 LED。
+- unit：fake clock 驱动阈值、持续时间、恢复、过滤、映射、场景一致性和优先级；不依赖硬件或网络。报告放 `docs/verification/unit/`。
+- contract：逐条对齐此基线的 Go 解析器，覆盖完整/故障telemetry、在线/遗嘱status、四类command/Ack、事件恢复与非法字段；以 Go 实际接受/拒绝结果建立黄金样例，避免两端自测互相误解。报告放 `docs/verification/contract/`。
+- integration：Python+实际Broker+Go独立服务+HTTP/双WS；覆盖断网、平台/Broker/设备重启、同ID补传、命令去重及磁盘/数据库异常。报告放 `docs/verification/integration/`。
+- hardware：在树莓派上按 P6 的五步执行，记录 I2C 地址、零偏、竖直轴、HC-SR04 误差、Echo 超时、OV5647 分辨率与 BGR、GPIO/摄像头释放。mock 通过不算硬件通过。执行器型号未定，不测蜂鸣器和 LED。报告放 `docs/verification/hardware/`。
 
-第一笔业务开发从 P1 开始：Sample/Frame/LaneResult → 驱动接口与六个场景 → 配置校验与LatestState/worker → fake-clock验证；完成后才接P2网络。Python运行时依赖在相应阶段核对官方/Context7文档并锁定，当前骨架没有安装或接入这些库。
+同一阶段、同一层只保留最新一份报告。P1 单元结果见 `docs/verification/unit/p1-local-data-chain.md`。P1 运行时依赖已锁定 PyYAML==6.0.3，开发依赖锁定 pytest==9.1.1。下一步才接 P2 网络。

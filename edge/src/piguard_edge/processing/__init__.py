@@ -1,1 +1,1 @@
-"""Signal filtering, distance mapping and lane processing (planned)."""
+"""Distance scaling and yaw-axis mapping. Filtering and lane vision come later."""

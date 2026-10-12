@@ -1,1 +1,1 @@
-"""Configuration loading, validation and immutable snapshots (planned)."""
+"""Configuration loading, validation, and immutable snapshots."""

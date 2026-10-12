@@ -1,1 +1,1 @@
-"""Internal samples, frames, lane results and state (planned)."""
+"""Internal samples, frames, and lane results."""

@@ -1,8 +1,8 @@
 # PiGuard 树莓派边缘端
 
-Python边缘工程，开发分支为 `edge`。完整开发顺序和实际Go契约见[开发规划](../docs/planning/PLAN.md)，接续状态见[HANDOFF](../HANDOFF.md)。课设与网络规范在 `docs/constraints/`。
+Python边缘工程，开发分支为 `edge`。总规范见[开发规划](../docs/planning/PLAN.md)，当前实施步骤见[开发电脑上的实施计划](../docs/planning/implementation/pc-edge-software.md)，接续状态见[HANDOFF](../HANDOFF.md)。课设与网络规范在 `docs/constraints/`。
 
-当前只有包目录骨架和配置设计示例；没有可运行的采集/预警服务、CLI、MQTT或硬件驱动。后续P1先实现本地模拟数据链，P2再接后端。
+P1 已实现模型、mock 采集、六个场景、配置加载和 LatestState。没有 CLI、MQTT、规则或硬件驱动。下一步是 P2 上行。单元测试在 `tests/unit/`，运行报告见 [P1 单元测试报告](../docs/verification/unit/p1-local-data-chain.md)。
 
 ## 模块职责
 

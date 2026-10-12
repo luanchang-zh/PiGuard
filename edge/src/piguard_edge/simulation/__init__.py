@@ -1,1 +1,1 @@
-"""Shared scenario clock and deterministic driving scenes (planned)."""
+"""Shared scenario clock and the six deterministic scenes."""

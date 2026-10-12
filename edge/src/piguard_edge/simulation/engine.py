@@ -24,8 +24,18 @@ class ScenarioEngine:
     def playback_speed(self) -> float:
         return self._playback_speed
 
+    def start(self, name: str, playback_speed: float) -> None:
+        if name not in SCENARIO_NAMES:
+            raise ValueError(f"unknown scenario: {name}")
+        if playback_speed not in PLAYBACK_SPEEDS:
+            raise ValueError(f"playback_speed must be one of {PLAYBACK_SPEEDS}")
+        self._name = name
+        self._playback_speed = playback_speed
+        self._anchor_next = True
+
     def stop(self) -> None:
         self._name = "normal_drive"
+        self._playback_speed = 1.0
         self._anchor_next = True
 
     def observe(self, monotonic_ns: int) -> Scene:

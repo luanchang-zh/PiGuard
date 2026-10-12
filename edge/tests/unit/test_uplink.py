@@ -11,6 +11,7 @@ from piguard_edge.runtime.clock import FakeClock
 from piguard_edge.runtime.state import LatestState
 from piguard_edge.runtime.workers import Sampler
 from piguard_edge.simulation.engine import ScenarioEngine
+from piguard_edge.storage.commands import CommandStore
 from piguard_edge.storage.events import EventStore
 from piguard_edge.transport.mqtt import FakeMqtt, PahoMqtt
 
@@ -30,7 +31,16 @@ def _app(example_config, scenario: str = "normal_drive"):
     engine = ScenarioEngine(scenario, 1.0)
     sampler = Sampler.from_config(config, engine, clock)
     transport = FakeMqtt()
-    app = EdgeApp(config, clock, transport, sampler, _ids(), store=EventStore(":memory:"))
+    app = EdgeApp(
+        config,
+        clock,
+        transport,
+        sampler,
+        _ids(),
+        store=EventStore(":memory:"),
+        engine=engine,
+        command_store=CommandStore(":memory:"),
+    )
     return app, clock, transport
 
 

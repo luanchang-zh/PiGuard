@@ -1,1 +1,1 @@
-"""Command validation, scheduling, deduplication and acknowledgements (planned)."""
+"""Validate, store, and acknowledge the four supported commands."""

@@ -1,6 +1,6 @@
 # 开发电脑上的边缘软件实施计划
 
-状态：P1 到 P3 的软件路径已完成。P2 见 [上行实施计划](p2-uplink.md)，P3 见 [本地预警实施计划](p3-local-warnings.md)。真实 Broker 联调未做。
+状态：P1 到 P4 的软件路径已完成。P2 见 [上行实施计划](p2-uplink.md)，P3 见 [本地预警实施计划](p3-local-warnings.md)，P4 见 [下行命令实施计划](p4-commands.md)。真实 Broker 联调未做。
 
 本文件是可执行的实施计划。型号、电气约束、MQTT 契约、频率、规则参数和阶段门槛以 [总规范](../PLAN.md) 为准。进度和下一步只写在根目录 `HANDOFF.md`。后续阶段开始时，在本目录另写 `pN-短名.md`，不把实施步骤改写进总规范。
 
@@ -62,7 +62,7 @@ mock 距离返回场景换算后的 `raw_value`。课设第 17 节给出的是�
 
 `sensor_failure` 按课设分别给出距离 `timeout`、摄像头 `unavailable`、陀螺仪 `error`，对应值为空。温度和车速保持有效。摄像头不可用时车道为 invalid。
 
-`scenario.stop` 回到 `normal_drive`，采样继续。P1 由测试直接调用这个切换；MQTT 命令留到 P4。
+`scenario.stop` 回到 `normal_drive`，采样继续。P1 由测试直接调用这个切换；P4 的 `scenario.stop` 命令做同一件事。
 
 检查：同一 fake time 上五类读数来自同一关键帧。把时钟重新拨到同一时刻，读数相同。停止后下一拍已经是 `normal_drive`。
 

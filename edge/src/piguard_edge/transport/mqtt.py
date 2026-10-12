@@ -20,6 +20,7 @@ class FakeMqtt:
         self.published: list[MqttMessage] = []
         self.subscriptions: list[tuple[str, int]] = []
         self._events: list[str] = []
+        self._inbox: list[MqttMessage] = []
         self.fail_connect = False
 
     def set_will(self, message: MqttMessage) -> None:
@@ -41,6 +42,14 @@ class FakeMqtt:
         self._events = []
         return events
 
+    def deliver(self, message: MqttMessage) -> None:
+        self._inbox.append(message)
+
+    def take_messages(self) -> list[MqttMessage]:
+        found = self._inbox
+        self._inbox = []
+        return found
+
     def publish(self, message: MqttMessage) -> None:
         self.published.append(message)
 
@@ -52,16 +61,18 @@ class FakeMqtt:
 
 
 class PahoMqtt:
-    """Blocking connect and a background loop. Callbacks only record up/down."""
+    """Blocking connect and a background loop. Callbacks only queue up, down, and inbound messages."""
 
     def __init__(self, config: EdgeConfig, client: object | None = None) -> None:
         self._config = config
         self._client = client if client is not None else _paho_client(config.mqtt.client_id)
         self._events: list[str] = []
+        self._inbox: list[MqttMessage] = []
         self._lock = threading.Lock()
         self._will_ready = False
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.on_message = self._on_message
 
     def set_will(self, message: MqttMessage) -> None:
         self._client.will_set(message.topic, message.payload, message.qos, message.retain)
@@ -79,6 +90,12 @@ class PahoMqtt:
             events = self._events
             self._events = []
             return events
+
+    def take_messages(self) -> list[MqttMessage]:
+        with self._lock:
+            found = self._inbox
+            self._inbox = []
+            return found
 
     def publish(self, message: MqttMessage) -> None:
         self._client.publish(message.topic, message.payload, message.qos, message.retain)
@@ -99,6 +116,15 @@ class PahoMqtt:
     def _on_disconnect(self, client: object, userdata: object, flags: object, reason_code: object, properties: object) -> None:
         with self._lock:
             self._events.append("down")
+
+    def _on_message(self, client: object, userdata: object, message: object) -> None:
+        with self._lock:
+            self._inbox.append(MqttMessage(
+                getattr(message, "topic"),
+                bytes(getattr(message, "payload")),
+                int(getattr(message, "qos", 0)),
+                bool(getattr(message, "retain", False)),
+            ))
 
 
 def _paho_client(client_id: str) -> object:

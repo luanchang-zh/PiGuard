@@ -102,16 +102,19 @@ PiGuard/
 │   │   └── implementation/   # 按阶段的可执行实施计划
 │   │       ├── pc-edge-software.md
 │   │       ├── p2-uplink.md
-│   │       └── p3-local-warnings.md
+│   │       ├── p3-local-warnings.md
+│   │       └── p4-commands.md
 │   └── verification/         # 测试运行报告，代码仍在 edge/tests
 │       ├── README.md
 │       ├── unit/
 │       │   ├── p1-local-data-chain.md
 │       │   ├── p2-uplink.md
-│       │   └── p3-local-warnings.md
+│       │   ├── p3-local-warnings.md
+│       │   └── p4-commands.md
 │       └── contract/
 │           ├── p2-telemetry.md
-│           └── p3-events.md
+│           ├── p3-events.md
+│           └── p4-acks.md
 └── edge/
     ├── README.md
     ├── pyproject.toml
@@ -146,7 +149,7 @@ PiGuard/
     └── data/            # edge.db/缓存/日志，运行数据不进 Git
 ```
 
-目录骨架在 P0 建立。P1 已实现模型、mock 驱动、六个场景、配置加载和 LatestState。P2 已实现遥测/状态编码、MQTT 会话和进程入口。P3 已实现四条规则、模拟执行器和事件缓存。P4 及之后点名的文件仍未实现。
+目录骨架在 P0 建立。P1 已实现模型、mock 驱动、六个场景、配置加载和 LatestState。P2 已实现遥测/状态编码、MQTT 会话和进程入口。P3 已实现四条规则、模拟执行器和事件缓存。P4 已实现四种命令的校验、去重、Ack 和模拟执行器仲裁。P5 及之后点名的文件仍未实现。
 
 ## 4. 核心模型、职责与并发
 
@@ -263,4 +266,4 @@ P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite�
 - integration：Python+实际Broker+Go独立服务+HTTP/双WS；覆盖断网、平台/Broker/设备重启、同ID补传、命令去重及磁盘/数据库异常。报告放 `docs/verification/integration/`。
 - hardware：在树莓派上按 P6 的五步执行，记录 I2C 地址、零偏、竖直轴、HC-SR04 误差、Echo 超时、OV5647 分辨率与 BGR、GPIO/摄像头释放。mock 通过不算硬件通过。执行器型号未定，不测蜂鸣器和 LED。报告放 `docs/verification/hardware/`。
 
-同一阶段、同一层只保留最新一份报告。P1 单元结果见 `docs/verification/unit/p1-local-data-chain.md`。P2 软件结果见 `docs/verification/unit/p2-uplink.md` 与 `docs/verification/contract/p2-telemetry.md`。P3 软件结果见 `docs/verification/unit/p3-local-warnings.md` 与 `docs/verification/contract/p3-events.md`。运行时依赖已锁定 PyYAML==6.0.3 与 paho-mqtt==2.1.0，开发依赖锁定 pytest==9.1.1。真实 Broker 联调尚未执行。
+同一阶段、同一层只保留最新一份报告。P1 单元结果见 `docs/verification/unit/p1-local-data-chain.md`。P2 软件结果见 `docs/verification/unit/p2-uplink.md` 与 `docs/verification/contract/p2-telemetry.md`。P3 软件结果见 `docs/verification/unit/p3-local-warnings.md` 与 `docs/verification/contract/p3-events.md`。P4 软件结果见 `docs/verification/unit/p4-commands.md` 与 `docs/verification/contract/p4-acks.md`。运行时依赖已锁定 PyYAML==6.0.3 与 paho-mqtt==2.1.0，开发依赖锁定 pytest==9.1.1。真实 Broker 联调尚未执行。P4 的 HTTP 查询和双 WebSocket 也不在这次软件运行里。

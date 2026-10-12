@@ -345,6 +345,7 @@ def test_disk_full_is_retried_instead_of_dropped(example_config) -> None:
     from piguard_edge.runtime.app import EdgeApp
     from piguard_edge.runtime.workers import Sampler
     from piguard_edge.simulation.engine import ScenarioEngine
+    from piguard_edge.storage.commands import CommandStore
     from piguard_edge.storage.events import EventStore
     from piguard_edge.transport.mqtt import FakeMqtt
 
@@ -352,7 +353,7 @@ def test_disk_full_is_retried_instead_of_dropped(example_config) -> None:
     transport = FakeMqtt()
     sampler = Sampler.from_config(example_config, ScenarioEngine("normal_drive", 1.0), clock)
     store = EventStore(":memory:")
-    app = EdgeApp(example_config, clock, transport, sampler, store=store)
+    app = EdgeApp(example_config, clock, transport, sampler, store=store, command_store=CommandStore(":memory:"))
     app.start()
     clock.advance_ns(100_000_000)
     for name in app._sampler._next_ns:

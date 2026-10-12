@@ -10,16 +10,18 @@ from datetime import timedelta
 
 from piguard_edge import __version__
 from piguard_edge.actuators.manager import ActuatorManager
+from piguard_edge.commands.handler import CommandHandler
 from piguard_edge.config.model import EdgeConfig
 from piguard_edge.drivers.base import Clock
 from piguard_edge.models.sample import format_utc
 from piguard_edge.protocol.event import EdgeEvent
 from piguard_edge.protocol.status import build_online_status, build_shutdown_status, build_will, sensor_statuses
 from piguard_edge.protocol.telemetry import build_telemetry
-from piguard_edge.protocol.topics import commands_topic, events_topic, status_topic, telemetry_topic
+from piguard_edge.protocol.topics import command_acks_topic, commands_topic, events_topic, status_topic, telemetry_topic
 from piguard_edge.rules.engine import RuleEngine
 from piguard_edge.runtime.workers import Sampler
 from piguard_edge.simulation.engine import ScenarioEngine
+from piguard_edge.storage.commands import CommandStore
 from piguard_edge.storage.events import EventStore
 from piguard_edge.transport.mqtt import MqttMessage
 
@@ -37,6 +39,8 @@ class EdgeApp:
         rules: RuleEngine | None = None,
         store: EventStore | None = None,
         actuators: ActuatorManager | None = None,
+        engine: ScenarioEngine | None = None,
+        command_store: CommandStore | None = None,
     ) -> None:
         self._config = config
         self._clock = clock
@@ -46,6 +50,15 @@ class EdgeApp:
         self._rules = rules if rules is not None else RuleEngine.from_config(config)
         self._store = store if store is not None else EventStore(config.storage.sqlite_path)
         self._actuators = actuators if actuators is not None else ActuatorManager.from_config(config)
+        self._engine = engine
+        self._commands = CommandHandler(
+            config.device.id,
+            config.device.mode,
+            clock,
+            engine,
+            self._actuators,
+            command_store if command_store is not None else CommandStore(config.storage.sqlite_path),
+        )
         self._seq = 0
         self._connected = False
         self._announced = False
@@ -78,9 +91,15 @@ class EdgeApp:
             RuleEngine.from_config(config),
             EventStore(config.storage.sqlite_path),
             ActuatorManager.from_config(config),
+            engine,
+            CommandStore(config.storage.sqlite_path),
         )
 
     def start(self) -> None:
+        try:
+            self._commands.recover()
+        except sqlite3.Error as exc:
+            self.storage_error = str(exc)
         self._purge_confirmed()
         device_id = self._config.device.id
         will = build_will(device_id=device_id)
@@ -95,6 +114,10 @@ class EdgeApp:
         self._sampler.step()
         self._retry_unstored()
         self._evaluate_rules()
+        self._commands.handle(self._transport.take_messages())
+        if self._commands.storage_error:
+            self.storage_error = self._commands.storage_error
+        self._commands.tick(self._clock.monotonic_ns())
         self._drain()
         if not self._connected:
             return
@@ -106,10 +129,12 @@ class EdgeApp:
             if self._next_telemetry_ns <= now:
                 self._next_telemetry_ns = now + period
         self._flush_events(republish=False)
+        self._flush_acks()
         self._publish_status_if_due(now)
 
     def stop(self) -> None:
         try:
+            self._commands.cancel_for_shutdown()
             if self._connected:
                 self._publish(self._status_message(build_shutdown_status(
                     self._sampler.state.snapshot(),
@@ -119,12 +144,14 @@ class EdgeApp:
                     config_version=self._config.device.config_version,
                     mode=self._config.device.mode,
                 )))
+                self._flush_acks()
             try:
                 self._transport.disconnect()
             except OSError:
                 return
         finally:
             self._store.close()
+            self._commands.close()
 
     def run(self, sleep: Callable[[float], None] | None = None, stop: threading.Event | None = None) -> None:
         pause = sleep or time.sleep
@@ -188,6 +215,7 @@ class EdgeApp:
         self._transport.subscribe(commands_topic(self._config.device.id), self._config.mqtt.command_qos)
         self._publish_online()
         self._flush_events(republish=True)
+        self._flush_acks()
         self._announced = True
 
     def _publish_status_if_due(self, now: int) -> None:
@@ -235,6 +263,24 @@ class EdgeApp:
         for row in rows:
             self._publish(MqttMessage(topic, row.payload, qos, False))
             self._store.mark_broker_confirmed(row.event_id)
+
+    def _flush_acks(self) -> None:
+        if not self._connected:
+            return
+        try:
+            rows = self._commands.unpublished()
+        except sqlite3.Error as exc:
+            self.storage_error = str(exc)
+            return
+        topic = command_acks_topic(self._config.device.id)
+        qos = self._config.mqtt.ack_qos
+        for row in rows:
+            self._publish(MqttMessage(topic, row.payload, qos, False))
+            try:
+                self._commands.mark_published(row.command_id)
+            except sqlite3.Error as exc:
+                self.storage_error = str(exc)
+                return
 
     def _status_message(self, payload: dict[str, object]) -> MqttMessage:
         return MqttMessage(

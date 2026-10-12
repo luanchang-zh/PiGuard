@@ -12,10 +12,11 @@ from pathlib import Path
 import pytest
 
 from piguard_edge.models.sample import UNIT_M, Sample, SampleStatus
+from piguard_edge.protocol.command import CommandProblem, DeviceCommand, encode_failure, encode_success, parse_command
 from piguard_edge.protocol.event import make_event
 from piguard_edge.protocol.status import build_online_status, build_will
 from piguard_edge.protocol.telemetry import build_telemetry
-from piguard_edge.protocol.topics import events_topic, status_topic, telemetry_topic
+from piguard_edge.protocol.topics import command_acks_topic, commands_topic, events_topic, status_topic, telemetry_topic
 from piguard_edge.runtime.clock import FakeClock
 from piguard_edge.runtime.state import LatestState
 
@@ -110,7 +111,34 @@ def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_confi
             {"topic": events_topic("car-001"), "body": {**_event(clock, "evt-extra", "sharp_turn", "started", "warning", {"yaw_rate_deg_s": 35.0}), "incident_id": "nope"}},
             {"topic": "car/car-002/events", "body": _event(clock, "evt-topic", "sensor_failure", "started", "warning", {"sensor": "gyro", "reason": "error"})},
         ],
+        "accept_command": [
+            {"topic": commands_topic("car-001"), "body": _command("cmd-buzzer", "buzzer.test", {"duration_ms": 1000})},
+            {"topic": commands_topic("car-001"), "body": _command("cmd-indicator", "indicator.test", {"color": "yellow", "duration_ms": 500})},
+            {"topic": commands_topic("car-001"), "body": _command("cmd-start", "scenario.start", {"scenario": "obstacle_approach", "speed": 2})},
+            {"topic": commands_topic("car-001"), "body": _command("cmd-stop", "scenario.stop", {})},
+        ],
+        "reject_command": [
+            {"topic": commands_topic("car-001"), "body": _command("cmd-short", "buzzer.test", {"duration_ms": 50})},
+            {"topic": commands_topic("car-001"), "body": _command("cmd-extra", "scenario.stop", {"reason": "now"})},
+            {"topic": commands_topic("car-001"), "body": {**_command("cmd-version", "buzzer.test", {"duration_ms": 200}), "schema_version": 2}},
+        ],
+        "accept_ack": [
+            {"topic": command_acks_topic("car-001"), "body": _ack_success(clock, "cmd-buzzer", {"message": "buzzer test completed"})},
+            {"topic": command_acks_topic("car-001"), "body": _ack_success(clock, "cmd-indicator", {"color": "red", "message": "indicator test completed"})},
+            {"topic": command_acks_topic("car-001"), "body": _ack_failure(clock, "cmd-expired", "COMMAND_EXPIRED", "command expired before execution")},
+        ],
+        "reject_ack": [
+            {"topic": command_acks_topic("car-001"), "body": {**_ack_success(clock, "cmd-both", {"message": "buzzer test completed"}), "error": {"code": "INTERNAL_ERROR", "message": "not success"}}},
+            {"topic": command_acks_topic("car-001"), "body": {**_ack_failure(clock, "cmd-result", "DEVICE_BUSY", "automatic warning is active"), "result": {"message": "should be omitted"}}},
+            {"topic": command_acks_topic("car-001"), "body": _without(_ack_success(clock, "cmd-time", {"message": "buzzer test completed"}), "executed_at")},
+        ],
     }
+    for item in fixtures["accept_command"]:
+        parsed = parse_command(item["topic"], json.dumps(item["body"]).encode("utf-8"), device_id="car-001")
+        assert isinstance(parsed, DeviceCommand)
+    for item in fixtures["reject_command"]:
+        parsed = parse_command(item["topic"], json.dumps(item["body"]).encode("utf-8"), device_id="car-001")
+        assert isinstance(parsed, CommandProblem)
     from tempfile import TemporaryDirectory
 
     with TemporaryDirectory() as directory:
@@ -132,6 +160,32 @@ def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_confi
             env={**dict(**_env()), "PAYLOADS": str(payloads)},
         )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def _command(command_id: str, command_type: str, params: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command_id": command_id,
+        "device_id": "car-001",
+        "type": command_type,
+        "issued_at": "2026-01-01T00:00:00.000Z",
+        "expires_at": "2026-01-01T00:00:10.000Z",
+        "params": params,
+    }
+
+
+def _ack_success(clock: FakeClock, command_id: str, result: dict[str, object]) -> dict[str, object]:
+    return json.loads(encode_success(command_id, "car-001", clock.utc(), result).decode("utf-8"))
+
+
+def _ack_failure(clock: FakeClock, command_id: str, code: str, message: str) -> dict[str, object]:
+    return json.loads(encode_failure(command_id, "car-001", clock.utc(), code, message).decode("utf-8"))
+
+
+def _without(body: dict[str, object], key: str) -> dict[str, object]:
+    copied = dict(body)
+    copied.pop(key)
+    return copied
 
 
 def _event(clock: FakeClock, event_id: str, event_type: str, action: str, level: str, data: dict[str, object]) -> dict[str, object]:

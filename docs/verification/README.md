@@ -21,3 +21,5 @@ docs/verification/
 - [P2 契约测试](contract/p2-telemetry.md)
 - [P3 单元测试](unit/p3-local-warnings.md)
 - [P3 契约测试](contract/p3-events.md)
+- [P4 单元测试](unit/p4-commands.md)
+- [P4 契约测试](contract/p4-acks.md)

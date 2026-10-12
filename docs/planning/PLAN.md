@@ -53,7 +53,7 @@ HC-SR04 的 `raw_value` 是测得的米。桌面演示保持 `distance_scale=100
 
 已阅读课程设计、网络规范、三项 Go capability 的规格、归档 brief/验收报告，并核对后端入口、协议、服务、仓储、MQTT、模拟器和相关测试。
 
-代码核验基线是本地 `go后端开发` 的 `0e65a536a3fe01ae4a866bbe91b695ea25f3623b`。以下代码路径均属于该分支；本边缘分支不复制这些文件。后端后续改变时，应重新核对契约基线。
+代码核验基线原来是本地 `go后端开发` 的 `0e65a536a3fe01ae4a866bbe91b695ea25f3623b`。2026-10-12 的契约测试和联调改为该分支尖端 `7b39493177fca1586279707a357b6f906694053e`。以下代码路径属于该分支；本边缘分支不复制这些文件。后端再改变时，应重新核对契约基线。
 
 | 能力 | 实际状态 | 边缘端的安排 |
 | --- | --- | --- |
@@ -65,7 +65,7 @@ HC-SR04 的 `raw_value` 是测得的米。桌面演示保持 `distance_scale=100
 | 配置查询/更新/确认 | GET/PUT 返回 501，未订阅 config-acks | 第一版使用本地 YAML；远程同步留作配套阶段 |
 | 图片上传/最新帧/图片内容 | 返回 501；camera.snapshot 被命令校验拒绝 | 先本地处理和保存，平台闭环待后端补齐 |
 | Go 模拟器 | 固定遥测、演示事件、命令解析和模拟 Ack | 作为协议参考；不替代 Python 场景、规则或执行器 |
-| 真实部署与鉴权 | 开发 Broker 匿名、persistence false；HTTP 无鉴权 | 隔离局域网联调，后续单独完善凭据/ACL/保留策略 |
+| 真实部署与鉴权 | 当前分支尖端的 Broker 和 HTTP 都要认证；Broker persistence 为 true | 联调用本地凭据，不写入边缘仓库。TLS 仍未做 |
 
 关键代码证据：
 
@@ -149,7 +149,7 @@ PiGuard/
     └── data/            # edge.db/缓存/日志，运行数据不进 Git
 ```
 
-目录骨架在 P0 建立。P1 已实现模型、mock 驱动、六个场景、配置加载和 LatestState。P2 已实现遥测/状态编码、MQTT 会话和进程入口。P3 已实现四条规则、模拟执行器和事件缓存。P4 已实现四种命令的校验、去重、Ack 和模拟执行器仲裁。P5 及之后点名的文件仍未实现。
+目录骨架在 P0 建立。P1 已实现模型、mock 驱动、六个场景、配置加载和 LatestState。P2 已实现遥测/状态编码、MQTT 会话和进程入口。P3 已实现四条规则、模拟执行器和事件缓存。P4 已实现四种命令的校验、去重、Ack 和模拟执行器仲裁。P5 已实现 `processing/lane.py`、合成道路和本地录像。P6 及之后点名的硬件文件仍未实现。
 
 ## 4. 核心模型、职责与并发
 
@@ -238,7 +238,7 @@ P6 在树莓派上按下面的顺序做。每一路通过后才接下一路线�
 
 P1/P3 的车道结果先由场景提供模拟 LaneResult；P5 再让合成图像与录像实际经过 OpenCV，不能将前面的模拟结果计为图像算法通过。OV5647 实拍进入同一条处理函数，不另写一套车道算法。
 
-P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite；真实 Broker 检查在联调环境可用时单独执行并保存结果。Go 模拟器只用于对照 payload，同一设备联调时关闭它。
+P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite。2026-10-12 的真实 Broker 检查见 `docs/verification/integration/p5-live-stack.md`。Go 模拟器只用于对照 payload，同一设备联调时关闭它。
 
 ### 规则首版参数与验收样例
 
@@ -266,4 +266,4 @@ P2/P3/P4 的软件验证先使用 fake clock、fake transport 和临时 SQLite�
 - integration：Python+实际Broker+Go独立服务+HTTP/双WS；覆盖断网、平台/Broker/设备重启、同ID补传、命令去重及磁盘/数据库异常。报告放 `docs/verification/integration/`。
 - hardware：在树莓派上按 P6 的五步执行，记录 I2C 地址、零偏、竖直轴、HC-SR04 误差、Echo 超时、OV5647 分辨率与 BGR、GPIO/摄像头释放。mock 通过不算硬件通过。执行器型号未定，不测蜂鸣器和 LED。报告放 `docs/verification/hardware/`。
 
-同一阶段、同一层只保留最新一份报告。P1 单元结果见 `docs/verification/unit/p1-local-data-chain.md`。P2 软件结果见 `docs/verification/unit/p2-uplink.md` 与 `docs/verification/contract/p2-telemetry.md`。P3 软件结果见 `docs/verification/unit/p3-local-warnings.md` 与 `docs/verification/contract/p3-events.md`。P4 软件结果见 `docs/verification/unit/p4-commands.md` 与 `docs/verification/contract/p4-acks.md`。运行时依赖已锁定 PyYAML==6.0.3 与 paho-mqtt==2.1.0，开发依赖锁定 pytest==9.1.1。真实 Broker 联调尚未执行。P4 的 HTTP 查询和双 WebSocket 也不在这次软件运行里。
+同一阶段、同一层只保留最新一份报告。P1 单元结果见 `docs/verification/unit/p1-local-data-chain.md`。P2 软件结果见 `docs/verification/unit/p2-uplink.md` 与 `docs/verification/contract/p2-telemetry.md`。P3 软件结果见 `docs/verification/unit/p3-local-warnings.md` 与 `docs/verification/contract/p3-events.md`。P4 软件结果见 `docs/verification/unit/p4-commands.md` 与 `docs/verification/contract/p4-acks.md`。P5 单元结果见 `docs/verification/unit/p5-lane.md`。真实 Broker 结果见 `docs/verification/integration/p5-live-stack.md`。运行时依赖已锁定 PyYAML==6.0.3、paho-mqtt==2.1.0 与 opencv-python-headless==4.11.0.86。开发依赖锁定 pytest==9.1.1 与 websockets==15.0.1。

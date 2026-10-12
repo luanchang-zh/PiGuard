@@ -1,6 +1,6 @@
 # P2 上行实施计划
 
-状态：软件路径已完成。真实 Broker 与 Go 服务联调未做。
+状态：软件路径已完成。真实 Broker 与 Go 服务联调见 [联调报告](../../verification/integration/p5-live-stack.md)。
 
 契约以 [总规范](../PLAN.md) 第 5 节和 `go后端开发` 的 `ParseTelemetry` / `ParseStatus` 为准。本文件只写这一阶段要做的事。
 

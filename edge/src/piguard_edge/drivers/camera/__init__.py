@@ -1,1 +1,1 @@
-"""Synthetic, replay, USB and CSI camera sources (planned)."""
+"""Synthetic and local-video cameras. CSI capture waits for the Raspberry Pi."""

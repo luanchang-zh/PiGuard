@@ -1,6 +1,6 @@
 # 开发电脑上的边缘软件实施计划
 
-状态：P1 到 P4 的软件路径已完成。P2 见 [上行实施计划](p2-uplink.md)，P3 见 [本地预警实施计划](p3-local-warnings.md)，P4 见 [下行命令实施计划](p4-commands.md)。真实 Broker 联调未做。
+状态：P1 到 P5 的软件路径已完成。P2 见 [上行实施计划](p2-uplink.md)，P3 见 [本地预警实施计划](p3-local-warnings.md)，P4 见 [下行命令实施计划](p4-commands.md)，P5 见 [车道检测实施计划](p5-lane.md)。真实 Broker 联调见 [联调报告](../../verification/integration/p5-live-stack.md)。
 
 本文件是可执行的实施计划。型号、电气约束、MQTT 契约、频率、规则参数和阶段门槛以 [总规范](../PLAN.md) 为准。进度和下一步只写在根目录 `HANDOFF.md`。后续阶段开始时，在本目录另写 `pN-短名.md`，不把实施步骤改写进总规范。
 

@@ -59,6 +59,9 @@ class Sampler:
             gyro_driver=config.sensors.gyro.driver,
             temperature_driver=config.sensors.temperature.driver,
             speed_driver=config.speed.driver,
+            video_path=config.sensors.camera.video_path,
+            width=config.sensors.camera.width,
+            height=config.sensors.camera.height,
         )
         return cls(
             sources,

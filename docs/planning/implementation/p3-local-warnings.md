@@ -1,6 +1,6 @@
 # P3 本地预警实施计划
 
-状态：软件路径已完成。真实 Broker 与 Go 服务联调未做。
+状态：软件路径已完成。真实 Broker 与 Go 服务联调见 [联调报告](../../verification/integration/p5-live-stack.md)。边缘端仍不把 HTTP 查询写回 `platform_confirmed`。
 
 契约以 [总规范](../PLAN.md) 第 5、6 节为准。本文件只写这一阶段要做的事。
 

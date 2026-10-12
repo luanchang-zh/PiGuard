@@ -2,7 +2,7 @@
 
 Python边缘工程，开发分支为 `edge`。总规范见[开发规划](../docs/planning/PLAN.md)，当前实施步骤见[开发电脑上的实施计划](../docs/planning/implementation/pc-edge-software.md)，接续状态见[HANDOFF](../HANDOFF.md)。课设与网络规范在 `docs/constraints/`。
 
-P1 已实现本地模拟数据链。P2 已实现遥测/状态编码、MQTT 会话和 `python -m piguard_edge`。P3 已实现四条规则、模拟执行器和事件缓存。P4 已实现四种下行命令、Ack 和模拟执行器仲裁。硬件驱动还没有。测试报告见 [P1](../docs/verification/unit/p1-local-data-chain.md)、[P2](../docs/verification/unit/p2-uplink.md)、[P3](../docs/verification/unit/p3-local-warnings.md) 与 [P4](../docs/verification/unit/p4-commands.md)。
+P1 已实现本地模拟数据链。P2 已实现遥测/状态编码、MQTT 会话和 `python -m piguard_edge`。P3 已实现四条规则、模拟执行器和事件缓存。P4 已实现四种下行命令、Ack 和模拟执行器仲裁。P5 已实现合成道路和本地录像的车道检测。硬件驱动还没有。测试报告见 [P1](../docs/verification/unit/p1-local-data-chain.md)、[P2](../docs/verification/unit/p2-uplink.md)、[P3](../docs/verification/unit/p3-local-warnings.md)、[P4](../docs/verification/unit/p4-commands.md)、[P5](../docs/verification/unit/p5-lane.md) 与 [联调](../docs/verification/integration/p5-live-stack.md)。
 
 ## 模块职责
 

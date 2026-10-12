@@ -11,11 +11,13 @@ requires-python = ">=3.11"
 dependencies = [
     "PyYAML==6.0.3",
     "paho-mqtt==2.1.0",
+    "opencv-python-headless==4.11.0.86",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest==9.1.1",
+    "websockets==15.0.1",
 ]
 
 [tool.setuptools.packages.find]

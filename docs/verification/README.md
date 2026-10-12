@@ -23,3 +23,5 @@ docs/verification/
 - [P3 契约测试](contract/p3-events.md)
 - [P4 单元测试](unit/p4-commands.md)
 - [P4 契约测试](contract/p4-acks.md)
+- [P5 单元测试](unit/p5-lane.md)
+- [真实 Broker 联调](integration/p5-live-stack.md)

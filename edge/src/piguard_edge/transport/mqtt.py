@@ -82,6 +82,8 @@ class PahoMqtt:
         if not self._will_ready:
             raise RuntimeError("will must be set before connect")
         mqtt = self._config.mqtt
+        if mqtt.username:
+            self._client.username_pw_set(mqtt.username, mqtt.password)
         self._client.connect(mqtt.host, mqtt.port, mqtt.keepalive_s)
         self._client.loop_start()
 

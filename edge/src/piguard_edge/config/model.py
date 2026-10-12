@@ -23,6 +23,8 @@ class MqttConfig:
     command_qos: int
     ack_qos: int
     status_heartbeat_s: int
+    username: str
+    password: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +46,7 @@ class CameraConfig:
     process_fps: int
     width: int
     height: int
+    video_path: str
 
 
 @dataclass(frozen=True, slots=True)

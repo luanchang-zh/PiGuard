@@ -1,6 +1,6 @@
 # P4 下行命令实施计划
 
-状态：软件路径已完成。真实 Broker、HTTP 查询和双 WebSocket 未做。
+状态：软件路径已完成。真实 Broker、HTTP 查询和双 WebSocket 见 [联调报告](../../verification/integration/p5-live-stack.md)。
 
 契约以 [总规范](../PLAN.md) 第 5 节为准。本文件只写这一阶段要做的事。
 

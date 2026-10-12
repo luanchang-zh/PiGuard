@@ -138,6 +138,8 @@ def _mqtt(value: Any) -> MqttConfig:
         "command_qos",
         "ack_qos",
         "status_heartbeat_s",
+        "username",
+        "password",
     }
     data = _section(value, keys, "mqtt")
     return MqttConfig(
@@ -151,6 +153,8 @@ def _mqtt(value: Any) -> MqttConfig:
         command_qos=_int(data["command_qos"], "mqtt.command_qos", minimum=0, maximum=2),
         ack_qos=_int(data["ack_qos"], "mqtt.ack_qos", minimum=0, maximum=2),
         status_heartbeat_s=_int(data["status_heartbeat_s"], "mqtt.status_heartbeat_s", minimum=1),
+        username=_optional_text(data["username"], "mqtt.username"),
+        password=_optional_text(data["password"], "mqtt.password"),
     )
 
 
@@ -166,7 +170,7 @@ def _sensors(value: Any) -> SensorsConfig:
     data = _section(value, {"distance", "gyro", "temperature", "camera"}, "sensors")
     camera = _section(
         data["camera"],
-        {"driver", "capture_fps", "process_fps", "width", "height"},
+        {"driver", "capture_fps", "process_fps", "width", "height", "video_path"},
         "sensors.camera",
     )
     return SensorsConfig(
@@ -179,6 +183,7 @@ def _sensors(value: Any) -> SensorsConfig:
             process_fps=_int(camera["process_fps"], "sensors.camera.process_fps", minimum=1),
             width=_int(camera["width"], "sensors.camera.width", minimum=1),
             height=_int(camera["height"], "sensors.camera.height", minimum=1),
+            video_path=_optional_text(camera["video_path"], "sensors.camera.video_path"),
         ),
     )
 
@@ -386,6 +391,14 @@ def _require(data: dict[str, Any], keys: set[str], path: str) -> None:
     missing = sorted(keys - set(data))
     if missing:
         raise ConfigError(f"{path} is missing {', '.join(missing)}")
+
+
+def _optional_text(value: Any, path: str) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ConfigError(f"{path} must be a string")
+    return value
 
 
 def _text(value: Any, path: str) -> str:

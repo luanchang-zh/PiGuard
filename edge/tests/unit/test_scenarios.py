@@ -48,7 +48,7 @@ def test_sequence_holds_the_last_keyframe() -> None:
     assert ScenarioEngine("obstacle_approach", 1.0).observe(100_000_000_000).road_distance_m == 5
 
 
-def test_sources_share_one_scene_and_keep_image_empty() -> None:
+def test_sources_share_one_scene_and_read_lane_from_pixels() -> None:
     engine = ScenarioEngine("obstacle_approach", 1.0)
     sources = build_sources(engine, distance_scale=100, **_DRIVERS)
     early = FakeClock(500_000_000)
@@ -60,8 +60,12 @@ def test_sources_share_one_scene_and_keep_image_empty() -> None:
     assert sources.gyro.read(late).value is not None
     assert sources.gyro.read(late).value.z == 2
     assert sources.temperature.read(late).value == 25
-    assert sources.camera.read(late).lane.offset_ratio == 0
-    assert sources.camera.read(late).image is None
+    frame = sources.camera.read(late)
+    assert frame.image is not None
+    assert frame.image.shape == (480, 640, 3)
+    assert frame.lane.valid is True
+    assert frame.lane.offset_ratio == pytest.approx(0)
+    assert frame.lane.direction == "center"
     assert sources.distance.read(early).value == 0.5
 
 
@@ -84,7 +88,7 @@ def test_lane_departure_positive_offset_is_right() -> None:
     frame = sources.camera.read(FakeClock(4_000_000_000))
 
     assert frame.lane.valid is True
-    assert frame.lane.offset_ratio == pytest.approx(0.4)
+    assert frame.lane.offset_ratio == pytest.approx(0.4, abs=0.02)
     assert frame.lane.direction == "right"
 
 

@@ -1,1 +1,1 @@
-"""Distance scaling and yaw-axis mapping. Filtering and lane vision come later."""
+"""Distance scaling, yaw-axis mapping, and lane detection."""

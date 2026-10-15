@@ -1,0 +1,76 @@
+services:
+  broker-init:
+    image: eclipse-mosquitto:2
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/piguard/init-broker-auth.sh"]
+    environment:
+      PIGUARD_AUTH_CONTAINER: "true"
+      PIGUARD_MQTT_USERNAME: ${PIGUARD_MQTT_USERNAME:?platform MQTT username required}
+      PIGUARD_MQTT_PASSWORD: ${PIGUARD_MQTT_PASSWORD:?platform MQTT password required}
+      PIGUARD_SEED_DEVICE_ID: ${PIGUARD_SEED_DEVICE_ID:-car-001}
+      PIGUARD_DEVICE_MQTT_PASSWORD: ${PIGUARD_DEVICE_MQTT_PASSWORD:?device MQTT password required}
+      PIGUARD_BROKER_HEALTH_USERNAME: ${PIGUARD_BROKER_HEALTH_USERNAME:?health username required}
+      PIGUARD_BROKER_HEALTH_PASSWORD: ${PIGUARD_BROKER_HEALTH_PASSWORD:?health password required}
+    volumes:
+      - ./deploy/init-broker-auth.sh:/piguard/init-broker-auth.sh:ro
+      - broker-auth:/mosquitto/auth
+    restart: "no"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "/piguard/start-broker.sh"]
+    ports:
+      - "1883:1883"
+    environment:
+      PIGUARD_BROKER_HEALTH_USERNAME: ${PIGUARD_BROKER_HEALTH_USERNAME:?health username required}
+      PIGUARD_BROKER_HEALTH_PASSWORD: ${PIGUARD_BROKER_HEALTH_PASSWORD:?health password required}
+    volumes:
+      - ./deploy/start-broker.sh:/piguard/start-broker.sh:ro
+      - ./deploy/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - broker-auth:/mosquitto/auth:ro
+      - broker-data:/mosquitto/data
+    depends_on:
+      broker-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -u \"$$PIGUARD_BROKER_HEALTH_USERNAME\" -P \"$$PIGUARD_BROKER_HEALTH_PASSWORD\" -t '$$SYS/broker/uptime' -C 1 -W 3 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      GIN_MODE: release
+      PIGUARD_HTTP_ADDR: 0.0.0.0:8080
+      PIGUARD_HTTP_AUTH_DISABLED: "false"
+      PIGUARD_HTTP_PLATFORM_USERNAME: ${PIGUARD_HTTP_PLATFORM_USERNAME:?HTTP platform username required}
+      PIGUARD_HTTP_PLATFORM_PASSWORD: ${PIGUARD_HTTP_PLATFORM_PASSWORD:?HTTP platform password required}
+      PIGUARD_HTTP_SEED_DEVICE_PASSWORD: ${PIGUARD_HTTP_SEED_DEVICE_PASSWORD:?HTTP device password required}
+      PIGUARD_HTTP_SESSION_TTL_MINUTES: ${PIGUARD_HTTP_SESSION_TTL_MINUTES:-30}
+      PIGUARD_HTTP_ALLOWED_ORIGINS: ${PIGUARD_HTTP_ALLOWED_ORIGINS:-[]}
+      PIGUARD_SEED_DEVICE_ID: ${PIGUARD_SEED_DEVICE_ID:-car-001}
+      PIGUARD_MQTT_BROKER: tcp://mosquitto:1883
+      PIGUARD_MQTT_USERNAME: ${PIGUARD_MQTT_USERNAME:?platform MQTT username required}
+      PIGUARD_MQTT_PASSWORD: ${PIGUARD_MQTT_PASSWORD:?platform MQTT password required}
+      PIGUARD_DATABASE_SQLITE_PATH: /app/data/piguard.db
+      PIGUARD_STORAGE_SNAPSHOT_DIR: /app/data/snapshots
+    volumes:
+      - backend-data:/app/data
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  broker-auth:
+  broker-data:
+  backend-data:

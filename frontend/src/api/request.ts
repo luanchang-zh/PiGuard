@@ -36,6 +36,10 @@ request.interceptors.response.use(
     return response
   },
   (error: AxiosError<ApiResponse>) => {
+    // 尚未上传预览是正常空状态，由调用方显示占位内容。
+    if (error.response?.status === 404 && error.response.data?.code === 40403 && error.config?.url?.endsWith('/frame')) {
+      return Promise.reject(error)
+    }
     if (error.response?.status === 401) {
       ElMessage.error('认证已失效，请重新登录')
       window.location.href = '/login'

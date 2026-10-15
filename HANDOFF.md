@@ -1,5 +1,11 @@
 # 树莓派边缘端接续状态
 
+## 2026-10-15 联调修复更新
+
+当前 checkout 包含前端、Go 后端和 Python 边缘端。本次补齐远程规则配置、设备 HTTP 事件确认、软件图片拍照/预览、MQTT 发送确认、首次连接重试、摄像头检测节流和 SIGTERM 退出，并修复前端 WS 代理、空预览弹错、轮询清理和在线显示。配置通过被忽略的 local.yaml 显式启用，见 edge/README.md。真实硬件驱动仍未实现。
+
+树莓派已由用户拔下；修复后以本机 mock 边缘端和真实认证 Broker/Go 验证，没有把新代码部署到树莓派。新结果见 docs/verification/integration/p5-platform-features.md。以下内容保留为较早阶段记录；其中“HTTP 确认未做、拍照不支持、配置/图片不可用、process_fps 未节流”已被本次更新替代。
+
 ## 目标与当前状态
 
 P1 到 P5 的软件路径已实现，并已与真实 Mosquitto、独立 Go 服务、HTTP 和两个 WebSocket 客户端联调。边缘端没有 HTTP 入库确认客户端。OV5647、GPIO 和蜂鸣器/LED 引脚仍未做。P5 步骤见 `docs/planning/implementation/p5-lane.md`。

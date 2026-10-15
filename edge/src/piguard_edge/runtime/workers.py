@@ -62,6 +62,7 @@ class Sampler:
             video_path=config.sensors.camera.video_path,
             width=config.sensors.camera.width,
             height=config.sensors.camera.height,
+            process_fps=config.sensors.camera.process_fps,
         )
         return cls(
             sources,
@@ -82,6 +83,11 @@ class Sampler:
             self._next_ns[name] += period
             if self._next_ns[name] <= now:
                 self._next_ns[name] = now + period
+
+    def close(self) -> None:
+        release = getattr(self.sources.camera, "release", None)
+        if release is not None:
+            release()
 
     def _sample(self, name: str) -> None:
         try:

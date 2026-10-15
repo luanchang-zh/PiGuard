@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDeviceStore } from '@/stores/device'
 import { useRealtime } from '@/composables/useRealtime'
 import { getDeviceState } from '@/api/device'
@@ -25,6 +25,8 @@ const state = ref<DeviceState | null>(null)
 const frameUrl = ref<string>('')
 const distanceHistory = ref<{ t: string; v: number | null }[]>([])
 const speedHistory = ref<{ t: string; v: number | null }[]>([])
+let frameTimer: ReturnType<typeof setInterval> | undefined
+let disposed = false
 
 const current = computed<DeviceState | null>(() => {
   if (telemetry.value) {
@@ -141,7 +143,7 @@ async function loadState() {
   // 拉取最近遥测历史，预填充趋势图
   try {
     const res = await listTelemetry(device.currentDeviceId, { limit: 60 })
-    const items = [...res.items].reverse()
+    const items = res.items
     for (const it of items) {
       pushHistory(distanceHistory.value, it.timestamp, it.distance)
       pushHistory(speedHistory.value, it.timestamp, it.speed)
@@ -164,7 +166,12 @@ onMounted(async () => {
   connect()
   await loadState()
   await loadFrame()
-  setInterval(loadFrame, 3000)
+  if (!disposed) frameTimer = setInterval(loadFrame, 3000)
+})
+
+onUnmounted(() => {
+  disposed = true
+  clearInterval(frameTimer)
 })
 
 // 监听实时数据更新历史
@@ -190,9 +197,10 @@ const sensorRows = computed(() => {
   ]
   return names.map((n) => ({
     name: n.label,
-    status: (s.samples?.[n.key]?.status ?? 'unavailable') as never,
+    lane: n.key === 'lane',
+    status: (s.samples?.[n.key]?.status || 'unavailable') as never,
     freshness: (s.freshness?.[n.key] ?? 'missing') as never,
-    source: s.samples?.[n.key]?.source ?? '--',
+    source: s.samples?.[n.key]?.source || '--',
   }))
 })
 </script>
@@ -330,7 +338,10 @@ const sensorRows = computed(() => {
             <el-table-column prop="name" label="传感器" />
             <el-table-column label="状态">
               <template #default="{ row }">
-                <el-tag :type="sensorStatusTag(row.status)" size="small">
+                <el-tag v-if="row.lane" :type="current?.lane.valid ? 'success' : 'info'" size="small">
+                  {{ current?.lane.valid ? '检测有效' : '未检测到车道' }}
+                </el-tag>
+                <el-tag v-else :type="sensorStatusTag(row.status)" size="small">
                   {{ sensorStatusText(row.status) }}
                 </el-tag>
               </template>

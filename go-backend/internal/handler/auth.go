@@ -82,7 +82,10 @@ func accessGuard(manager *auth.Manager) gin.HandlerFunc {
 			deny(c, http.StatusUnauthorized, apperr.CodeUnauthorized, "authentication required")
 			return
 		}
-		if identity.Role != "platform" && !(identity.Role == "device" && c.Request.Method == "POST" && c.FullPath() == "/api/v1/devices/:device_id/frames" && c.Param("device_id") == identity.Username) {
+		deviceWrite := identity.Role == "device" && c.Request.Method == "POST" &&
+			(c.FullPath() == "/api/v1/devices/:device_id/frames" || c.FullPath() == "/api/v1/devices/:device_id/events/confirmations") &&
+			c.Param("device_id") == identity.Username
+		if identity.Role != "platform" && !deviceWrite {
 			deny(c, http.StatusForbidden, apperr.CodeForbidden, "permission denied")
 			return
 		}

@@ -17,7 +17,7 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const device = useDeviceStore()
-const { connected, deviceStatus, connect } = useRealtime()
+const { connected, deviceStatus, telemetry, connect } = useRealtime()
 
 const menus = [
   { path: '/dashboard', title: '实时监控', icon: Monitor },
@@ -27,7 +27,12 @@ const menus = [
 ]
 
 const activeMenu = computed(() => route.path)
-const online = computed(() => deviceStatus.value?.online ?? false)
+const online = computed(() => {
+  const id = device.currentDeviceId
+  if (telemetry.value?.device_id === id) return telemetry.value.online
+  if (deviceStatus.value?.device_id === id) return deviceStatus.value.online
+  return device.devices.find((d) => d.device_id === id)?.online ?? false
+})
 
 async function loadDevices() {
   try {

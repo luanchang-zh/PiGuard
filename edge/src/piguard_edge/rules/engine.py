@@ -72,6 +72,17 @@ class RuleEngine:
         self._watch_sample(events, "temperature", classify(state.temperature, now_ns, self._ttl.temperature), now_ns, timestamp)
         return RiskUpdate(self._level(), self._active(), tuple(events))
 
+    def reconfigure(self, config: EdgeConfig) -> None:
+        # Preserve active alarms so a new threshold can emit their recovery.
+        for rule, settings in (
+            (self._obstacle, config.rules.obstacle),
+            (self._lane, config.rules.lane_departure),
+            (self._sharp_turn, config.rules.sharp_turn),
+            (self._temperature, config.rules.temperature),
+        ):
+            rule._config = settings
+            rule.alarm.note_invalid()
+
     def _emit_lane(self, events: list[EdgeEvent], state: LatestState, now_ns: int, timestamp: datetime) -> None:
         kind, reason = classify_frame(state.frame, now_ns, self._ttl.lane)
         self._watch_sample(events, "camera", (kind, reason), now_ns, timestamp)

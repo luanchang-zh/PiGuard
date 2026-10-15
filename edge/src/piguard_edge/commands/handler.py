@@ -29,6 +29,7 @@ class CommandHandler:
         engine: ScenarioEngine | None,
         actuators: ActuatorManager,
         store: CommandStore,
+        snapshot_handler=None,
     ) -> None:
         self._device_id = device_id
         self._mode = mode
@@ -36,6 +37,7 @@ class CommandHandler:
         self._engine = engine
         self._actuators = actuators
         self._store = store
+        self._snapshot_handler = snapshot_handler
         self._deferred: list[MqttMessage] = []
         self.storage_error: str | None = None
 
@@ -114,12 +116,24 @@ class CommandHandler:
         if parsed.command_type in ("buzzer.test", "indicator.test"):
             self._start_test(parsed)
             return
+        if parsed.command_type == "camera.snapshot":
+            self._store.insert_running(parsed.command_id, parsed.device_id, parsed.fingerprint)
+            self._snapshot_handler(parsed)
+            return
         self._run_scenario(parsed)
+
+    def finish_snapshot(self, command_id: str, snapshot_id: str | None, code: str = "SNAPSHOT_UPLOAD_FAILED") -> None:
+        if snapshot_id is not None:
+            self._finish(command_id, "success", result={"snapshot_id": snapshot_id})
+        else:
+            self._finish(command_id, "failed", code, "snapshot could not be completed")
 
     def _refusal(self, command: DeviceCommand) -> tuple[str, str] | None:
         now = self._clock.utc()
         if now >= command.expires_at:
             return "COMMAND_EXPIRED", "command expired before execution"
+        if command.command_type == "camera.snapshot" and self._snapshot_handler is None:
+            return "UNSUPPORTED_COMMAND", "frame upload is disabled"
         if command.command_type in ("scenario.start", "scenario.stop") and self._mode != "mock":
             return "DEVICE_NOT_SUPPORTED", "scenario commands are not available in hardware mode"
         if command.command_type in ("scenario.start", "scenario.stop") and self._engine is None:

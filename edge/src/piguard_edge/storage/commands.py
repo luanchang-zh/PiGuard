@@ -82,7 +82,7 @@ class CommandStore:
 
     def unpublished(self) -> list[StoredAck]:
         rows = self._connection().execute(
-            "SELECT command_id, ack FROM commands WHERE published = 0 AND ack IS NOT NULL ORDER BY rowid"
+            "SELECT command_id, ack FROM commands WHERE published = 0 AND ack IS NOT NULL ORDER BY rowid LIMIT 64"
         ).fetchall()
         return [StoredAck(row["command_id"], bytes(row["ack"])) for row in rows]
 

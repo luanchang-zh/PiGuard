@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"sync/atomic"
@@ -238,4 +239,8 @@ func TestSubscriberConfigAckRoutingAndRestoreAfterSubscription(t *testing.T) {
 		t.Fatal("closed subscriber restored configuration")
 	default:
 	}
+}
+
+func (c *countingEvents) Confirm(context.Context, string, []json.RawMessage) ([]string, error) {
+	return nil, nil
 }

@@ -57,6 +57,7 @@ func NewEngine(dep Dependencies) *gin.Engine {
 	deviceRoutes.GET("/:device_id/state", devices.State)
 	deviceRoutes.GET("/:device_id/telemetry", telemetry.List)
 	deviceRoutes.GET("/:device_id/events", events.List)
+	deviceRoutes.POST("/:device_id/events/confirmations", events.Confirmations)
 	deviceRoutes.GET("/:device_id/config", configs.Get)
 	deviceRoutes.PUT("/:device_id/config", configs.Update)
 	deviceRoutes.POST("/:device_id/commands", commands.Create)

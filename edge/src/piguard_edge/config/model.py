@@ -31,6 +31,8 @@ class MqttConfig:
 class HttpConfig:
     base_url: str
     timeout_s: float
+    username: str = ""
+    password: str = ""
 
 
 @dataclass(frozen=True, slots=True)

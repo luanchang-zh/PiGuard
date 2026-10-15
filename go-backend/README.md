@@ -278,3 +278,9 @@ MOSQUITTO_BIN="$(command -v mosquitto)" go test -tags integration ./internal/ser
 ```
 
 该检查必须提供可运行的 Mosquitto；没有 Broker 不会将检查跳过后算作通过。
+
+## 设备事件入库确认
+
+`POST /api/v1/devices/{device_id}/events/confirmations` 接收 `{"events":[原始v1事件报文,...]}`，每批 1—64 条、正文不超过 256 KiB。返回 `data.confirmed_event_ids`，仅包括平台已经持久保存且设备、类型、动作、级别、时间、数据和原始图片引用全部一致的记录；不存在或内容冲突的 ID 不确认。此接口不写入事件，也不返回事件内容。
+
+允许平台身份及该设备自己的 Basic 身份。设备不能确认其他设备的事件，也不能访问平台事件列表、WebSocket 或控制接口。边缘端收到确认后才标记 platform_confirmed，缓存清理仍遵守保留期。旧版后端未提供该接口时，边缘端保留未确认数据，不能把 MQTT PUBACK 当作平台入库确认。

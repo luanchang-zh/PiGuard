@@ -41,3 +41,46 @@ PYTHONPATH=src python -c 'import piguard_edge; print(piguard_edge.__version__)'
 ```
 
 接入后端时使用电脑的局域网IP，而不是树莓派自身的127.0.0.1。Go直接运行的默认HTTP只监听127.0.0.1，需要后端配置为可达监听地址；该配置在后端分支/运行环境处理。
+
+## 2026-10-15 软件联调修复
+
+已补齐设备 HTTP 事件确认、远程规则配置、软件帧拍照/预览上传、启动连接重试和 SIGTERM 停止。实机传感器和 GPIO 驱动仍未实现；mock 图片来自合成道路或本地录像。以上更新替代本文早期阶段对“配置、图片、HTTP 确认未实现”的描述。
+
+在被 Git 忽略的 `config/local.yaml` 中配置：
+
+```yaml
+mqtt:
+  host: 电脑局域网地址
+  username: car-001
+  password: 设备MQTT密码
+http:
+  base_url: http://电脑局域网地址:8080/api/v1
+  username: car-001
+  password: 设备HTTP密码
+features:
+  remote_config: true
+  frame_upload: true
+```
+
+HTTP 密码与 MQTT 密码独立，设备上只使用设备身份。HTTP 身份启用后台事件确认；图片和配置默认仍关闭，避免旧部署未经配置自动启用。启动：
+
+```sh
+python -m piguard_edge --config config/default.example.yaml
+```
+
+- QoS 1 发布确认后才标记事件/命令 Ack 已发送。网络回调只入队；等待确认不会阻塞采样。首次 Broker 不可达也继续采样，并由后台网络线程重试。
+- 事件确认每 5 秒检查一批，最多 64 条，轮转处理积压。后端仅确认设备自己的、与持久记录内容完全相同的事件；未确认记录保留。默认保留已确认记录 7 天，不等于确认后立即删除。
+- 配置完整校验并持久化后更新规则和报告版本，再发送 config-acks。相同版本相同规则重发原 Ack，冲突保留首个结果，旧版本不回退。重启恢复最后成功规则；更新阈值保留活跃告警，使恢复事件仍可正常产生。平台尚未定义的时距和高温恢复持续时间继续使用本地值。
+- `camera.snapshot` 从当前有效帧编码 JPEG，在后台上传，成功才用平台返回的 snapshot_id 回复。重试复用 frame_id、时间和图片字节，最多 3 次；认证/参数错误不重试。同一命令不重复拍照，未完成命令重启后返回 RESULT_UNCERTAIN。无有效帧明确失败。启用图片后每 2 秒上传一张 preview；mock 不冒充真实摄像头。
+- 采集仍按 capture_fps，检测按 process_fps；复用检测结果时保留其原采样时间。SIGINT/SIGTERM 退出会停止输出、发送离线并释放录像资源。
+
+无需树莓派的真实 Broker/Go 集成回归：先构建后端，并指定本机 Mosquitto（同安装布局包含 mosquitto_passwd）。测试使用随机 loopback 端口、临时凭据/数据库，只清理自身启动的进程。
+
+```sh
+(cd ../go-backend && go build -o /tmp/piguard-backend ./cmd/server)
+PIGUARD_TEST_BACKEND_BIN=/tmp/piguard-backend \
+PIGUARD_TEST_MOSQUITTO_BIN=/usr/sbin/mosquitto \
+python -m pytest tests/integration/test_platform_features.py -q
+```
+
+验证范围与限制见 [本次记录](../docs/verification/integration/p5-platform-features.md)。

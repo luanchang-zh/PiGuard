@@ -12,6 +12,7 @@ from piguard_edge.protocol.event import EdgeEvent
 class StoredEvent:
     event_id: str
     payload: bytes
+    row_id: int = 0
 
 
 class EventStore:
@@ -64,10 +65,15 @@ class EventStore:
         conn.commit()
 
     def unpublished(self) -> list[StoredEvent]:
-        return self._select("broker_confirmed = 0")
+        return self._select("broker_confirmed = 0", limit=64)
 
-    def unconfirmed(self) -> list[StoredEvent]:
-        return self._select("platform_confirmed = 0")
+    def unconfirmed(self, after_row_id: int = 0) -> list[StoredEvent]:
+        return self._select("platform_confirmed = 0 AND rowid > ?", limit=64, args=(after_row_id,))
+
+    def request_republish(self) -> None:
+        conn = self._connection()
+        conn.execute("UPDATE events SET broker_confirmed = 0 WHERE platform_confirmed = 0")
+        conn.commit()
 
     def mark_broker_confirmed(self, event_id: str) -> None:
         self._mark("broker_confirmed", event_id)
@@ -96,10 +102,10 @@ class EventStore:
         self._conn.close()
         self._conn = None
 
-    def _select(self, where: str) -> list[StoredEvent]:
+    def _select(self, where: str, limit: int = 64, args: tuple = ()) -> list[StoredEvent]:
         conn = self._connection()
-        rows = conn.execute(f"SELECT event_id, payload FROM events WHERE {where} ORDER BY rowid").fetchall()
-        return [StoredEvent(row["event_id"], bytes(row["payload"])) for row in rows]
+        rows = conn.execute(f"SELECT rowid, event_id, payload FROM events WHERE {where} ORDER BY rowid LIMIT ?", (*args, limit)).fetchall()
+        return [StoredEvent(row["event_id"], bytes(row["payload"]), row["rowid"]) for row in rows]
 
     def _mark(self, column: str, event_id: str) -> None:
         if column not in ("broker_confirmed", "platform_confirmed"):
@@ -112,4 +118,3 @@ class EventStore:
         if self._conn is None:
             raise sqlite3.ProgrammingError("event store is closed")
         return self._conn
-

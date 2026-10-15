@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -57,4 +60,29 @@ func (h *EventHandler) List(c *gin.Context) {
 		return
 	}
 	writeOK(c, gin.H{"items": items})
+}
+
+// Confirmations returns no event contents and cannot create or modify events.
+func (h *EventHandler) Confirmations(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 256*1024)
+	var body struct {
+		Events []json.RawMessage `json:"events"`
+	}
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(c, &apperr.InvalidParams{Field: "events"})
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		writeError(c, &apperr.InvalidParams{Field: "body"})
+		return
+	}
+	ids, err := h.svc.Confirm(c.Request.Context(), c.Param("device_id"), body.Events)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	writeOK(c, gin.H{"confirmed_event_ids": ids})
 }

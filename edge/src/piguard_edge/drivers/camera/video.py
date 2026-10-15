@@ -5,14 +5,15 @@ from pathlib import Path
 import cv2
 
 from piguard_edge.drivers.base import Clock, stamped
-from piguard_edge.drivers.camera.synthetic import _lane_from_image
+from piguard_edge.drivers.camera.synthetic import LaneProcessor
 from piguard_edge.models.frame import Frame, invalid_lane
 from piguard_edge.models.sample import SOURCE_MOCK, SampleStatus
 from piguard_edge.processing.lane import IMAGE_HEIGHT, IMAGE_WIDTH
 
 
 class VideoCamera:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, process_fps: int | None = None) -> None:
+        self._detector = LaneProcessor(process_fps)
         self._path = Path(path)
         if not self._path.is_file():
             raise FileNotFoundError(self._path)
@@ -35,7 +36,7 @@ class VideoCamera:
             self.release()
             return _closed(sample_at, monotonic_ns)
         image = _fit(frame)
-        return Frame(sample_at, monotonic_ns, SOURCE_MOCK, SampleStatus.OK, image, _lane_from_image(image, sample_at))
+        return Frame(sample_at, monotonic_ns, SOURCE_MOCK, SampleStatus.OK, image, self._detector.read(image, sample_at, monotonic_ns))
 
     def release(self) -> None:
         if self._capture is None:

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,7 @@ type EventService interface {
 	Ingest(ctx context.Context, topic string, payload []byte) error
 	List(ctx context.Context, deviceID string, query repo.EventQuery) ([]protocol.EventItem, error)
 	FrameSaved(context.Context, string, string, string) error
+	Confirm(context.Context, string, []json.RawMessage) ([]string, error)
 }
 
 type eventService struct {
@@ -196,4 +198,33 @@ func snapshotPtr(id string) *string {
 		return nil
 	}
 	return &id
+}
+
+// Confirm only acknowledges exact immutable records owned by this device.
+func (s *eventService) Confirm(ctx context.Context, device string, payloads []json.RawMessage) ([]string, error) {
+	if len(payloads) == 0 || len(payloads) > 64 {
+		return nil, &apperr.InvalidParams{Field: "events"}
+	}
+	parsed := make([]*protocol.Event, 0, len(payloads))
+	for _, raw := range payloads {
+		event, err := protocol.ParseEvent("car/"+device+"/events", raw)
+		if err != nil {
+			return nil, &apperr.InvalidParams{Field: "events"}
+		}
+		parsed = append(parsed, event)
+	}
+	confirmed := []string{}
+	for _, event := range parsed {
+		row, err := s.events.Find(ctx, event.EventID)
+		if errors.Is(err, repo.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if event.SameRecord(row.DeviceID, row.Type, row.Action, row.Level, row.Timestamp, row.Payload, row.SnapshotID, row.FrameID) {
+			confirmed = append(confirmed, event.EventID)
+		}
+	}
+	return confirmed, nil
 }

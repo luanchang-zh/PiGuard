@@ -25,3 +25,5 @@ docs/verification/
 - [P4 契约测试](contract/p4-acks.md)
 - [P5 单元测试](unit/p5-lane.md)
 - [真实 Broker 联调](integration/p5-live-stack.md)
+
+- [软件联调修复：配置、图片、事件确认与恢复](integration/p5-platform-features.md)

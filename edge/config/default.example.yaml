@@ -22,6 +22,10 @@ mqtt:
 http:
   base_url: http://127.0.0.1:8080/api/v1
   timeout_s: 3
+  # 设备 HTTP 身份，与 MQTT 密码独立。真实密码只放 config/local.yaml。
+  # 填写后启用后台事件入库确认；平台账号不应部署到设备。
+  username: ""
+  password: ""
 
 sensors:
   distance:
@@ -93,7 +97,7 @@ storage:
   confirmed_event_retention_days: 7
 
 features:
-  # 现有Go后端仍缺少这些能力，默认关闭。
+  # 软件闭环已实现；在 local.yaml 中按需启用并填写设备 HTTP 凭据。
   remote_config: false
   frame_upload: false
 

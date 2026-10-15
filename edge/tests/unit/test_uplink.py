@@ -305,7 +305,7 @@ class _StubClient:
     def will_set(self, topic, payload, qos, retain) -> None:
         self.will = (topic, payload, qos, retain)
 
-    def connect(self, host, port, keepalive) -> None:
+    def connect_async(self, host, port, keepalive) -> None:
         self.connect_args = (host, port, keepalive)
 
     def loop_start(self) -> None:

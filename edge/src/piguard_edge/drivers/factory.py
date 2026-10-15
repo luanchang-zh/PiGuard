@@ -25,15 +25,16 @@ def build_sources(
     video_path: str = "",
     width: int = 640,
     height: int = 480,
+    process_fps: int | None = None,
 ) -> Sources:
     if distance_driver != "mock":
         raise DriverUnavailable(f"distance driver {distance_driver} is not available in mock mode")
     if camera_driver == "synthetic":
-        camera = SyntheticCamera(scene_source, width=width, height=height)
+        camera = SyntheticCamera(scene_source, width=width, height=height, process_fps=process_fps)
     elif camera_driver == "video":
         if not video_path:
             raise DriverUnavailable("video driver needs sensors.camera.video_path")
-        camera = VideoCamera(video_path)
+        camera = VideoCamera(video_path, process_fps=process_fps)
     else:
         raise DriverUnavailable(f"camera driver {camera_driver} is not available in mock mode")
     if gyro_driver != "mock":

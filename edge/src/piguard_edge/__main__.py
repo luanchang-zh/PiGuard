@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> None:
         stop.set()
 
     signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
     app.run(stop=stop)
 
 

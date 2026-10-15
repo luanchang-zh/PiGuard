@@ -159,10 +159,16 @@ def _mqtt(value: Any) -> MqttConfig:
 
 
 def _http(value: Any) -> HttpConfig:
-    data = _section(value, {"base_url", "timeout_s"}, "http")
+    if not isinstance(value, dict):
+        raise ConfigError("http must be a mapping")
+    data = value
+    _unknown(data, {"base_url", "timeout_s", "username", "password"}, "http")
+    _require(data, {"base_url", "timeout_s"}, "http")
     return HttpConfig(
         base_url=_text(data["base_url"], "http.base_url"),
         timeout_s=_number(data["timeout_s"], "http.timeout_s", minimum=0, inclusive=False),
+        username=_optional_text(data.get("username", ""), "http.username"),
+        password=_optional_text(data.get("password", ""), "http.password"),
     )
 
 

@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from piguard_edge.config.model import EdgeConfig
 
 
+class Published:
+    def is_published(self) -> bool:
+        return True
+
+
 @dataclass(frozen=True, slots=True)
 class MqttMessage:
     topic: str
@@ -50,8 +55,9 @@ class FakeMqtt:
         self._inbox = []
         return found
 
-    def publish(self, message: MqttMessage) -> None:
+    def publish(self, message: MqttMessage) -> Published:
         self.published.append(message)
+        return Published()
 
     def subscribe(self, topic: str, qos: int) -> None:
         self.subscriptions.append((topic, qos))
@@ -61,7 +67,7 @@ class FakeMqtt:
 
 
 class PahoMqtt:
-    """Blocking connect and a background loop. Callbacks only queue up, down, and inbound messages."""
+    """Connect and reconnect in the background; callbacks only queue messages."""
 
     def __init__(self, config: EdgeConfig, client: object | None = None) -> None:
         self._config = config
@@ -84,7 +90,7 @@ class PahoMqtt:
         mqtt = self._config.mqtt
         if mqtt.username:
             self._client.username_pw_set(mqtt.username, mqtt.password)
-        self._client.connect(mqtt.host, mqtt.port, mqtt.keepalive_s)
+        self._client.connect_async(mqtt.host, mqtt.port, mqtt.keepalive_s)
         self._client.loop_start()
 
     def poll(self) -> list[str]:
@@ -99,8 +105,11 @@ class PahoMqtt:
             self._inbox = []
             return found
 
-    def publish(self, message: MqttMessage) -> None:
-        self._client.publish(message.topic, message.payload, message.qos, message.retain)
+    def publish(self, message: MqttMessage) -> object:
+        receipt = self._client.publish(message.topic, message.payload, message.qos, message.retain)
+        if receipt.rc != 0:
+            raise OSError("MQTT publish was not accepted")
+        return receipt
 
     def subscribe(self, topic: str, qos: int) -> None:
         self._client.subscribe(topic, qos)

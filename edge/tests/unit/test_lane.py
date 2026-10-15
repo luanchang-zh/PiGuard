@@ -101,3 +101,25 @@ def test_video_ends_and_releases_the_capture(tmp_path) -> None:
     assert ended.image is None
     assert ended.lane.valid is False
     assert camera.released is True
+
+
+def test_capture_rate_and_processing_rate_are_independent(example_config, monkeypatch):
+    from piguard_edge.runtime.workers import Sampler
+    import piguard_edge.drivers.camera.synthetic as camera_module
+    calls = []
+    original = camera_module.lane.inspect_lane
+    def count(image):
+        calls.append(1)
+        return original(image)
+    monkeypatch.setattr(camera_module.lane, 'inspect_lane', count)
+    clock = FakeClock()
+    sampler = Sampler.from_config(example_config, ScenarioEngine('normal_drive', 1), clock)
+    timestamps = []
+    for _ in range(10):
+        clock.advance_ns(100_000_000)
+        sampler.step()
+        timestamps.append(sampler.state.frame.lane.sample_at)
+    assert len(calls) == 5
+    assert timestamps[0] == timestamps[1]
+    assert timestamps[1] < timestamps[2]
+    sampler.close()

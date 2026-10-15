@@ -8,7 +8,7 @@ from piguard_edge.models.sample import format_utc
 from piguard_edge.simulation.scenarios import SCENARIO_NAMES
 
 _COMMAND_FIELDS = {"schema_version", "command_id", "device_id", "type", "issued_at", "expires_at", "params"}
-_SUPPORTED = {"buzzer.test", "indicator.test", "scenario.start", "scenario.stop"}
+_SUPPORTED = {"buzzer.test", "indicator.test", "scenario.start", "scenario.stop", "camera.snapshot"}
 _COLORS = {"green", "yellow", "red"}
 _PLAYBACK = {0.5, 1.0, 2.0}
 
@@ -98,6 +98,11 @@ def encode_failure(command_id: str, device_id: str, executed_at: datetime, code:
 
 
 def _check_params(command_type: str, params: dict[str, object]) -> dict[str, object] | str:
+    if command_type == "camera.snapshot":
+        quality = params.get("quality", 80)
+        if set(params) - {"quality"} or type(quality) is not int or not 1 <= quality <= 100:
+            return "quality must be an integer from 1 to 100"
+        return {"quality": quality}
     if command_type == "buzzer.test":
         duration = _duration(params, {"duration_ms"})
         return duration if isinstance(duration, str) else {"duration_ms": duration}

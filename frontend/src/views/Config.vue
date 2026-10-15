@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useDeviceStore } from '@/stores/device'
 import { getConfig, updateConfig } from '@/api/config'
@@ -9,6 +9,7 @@ const device = useDeviceStore()
 const loading = ref(false)
 const saving = ref(false)
 const config = ref<ConfigView | null>(null)
+let pollTimer: ReturnType<typeof setInterval> | undefined
 
 // 表单使用深拷贝，避免直接修改返回对象
 const form = reactive<RuleSet>({
@@ -39,7 +40,7 @@ async function save() {
       expected_version: config.value.desired_version,
       rules: form,
     })
-    ElMessage.success(`配置已下发，版本 ${res.config_version}`)
+    ElMessage.success(`配置已受理，版本 ${res.config_version}，等待设备确认`)
     await load()
   } catch {
     /* 拦截器已提示；版本冲突时刷新 */
@@ -49,7 +50,18 @@ async function save() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  pollTimer = setInterval(async () => {
+    if (config.value?.status !== 'pending' || saving.value) return
+    try {
+      config.value = await getConfig(device.currentDeviceId)
+    } catch {
+      /* 请求拦截器显示错误；不覆盖用户正在编辑的表单。 */
+    }
+  }, 2000)
+})
+onUnmounted(() => clearInterval(pollTimer))
 </script>
 
 <template>

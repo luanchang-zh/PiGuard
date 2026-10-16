@@ -68,20 +68,15 @@ export type Freshness = 'fresh' | 'stale' | 'fault' | 'missing'
 
 // ---------- 遥测历史 ----------
 export interface TelemetryItem {
-  id?: number
-  device_id: string
   timestamp: string
-  seq?: number
-  speed?: number
-  distance?: number
-  temperature?: number
-  yaw_rate?: number
-  lane_offset?: number
-  risk_level?: RiskLevel
-  gyro_x?: number
-  gyro_y?: number
-  gyro_z?: number
-  received_at?: string
+  speed_kmh: number | null
+  distance_m: number | null
+  temperature_c: number | null
+  yaw_rate_deg_s: number | null
+  lane_offset_ratio: number | null
+  risk_level: RiskLevel
+  samples: Record<string, SampleInfo>
+  freshness: Record<string, Freshness>
 }
 
 export interface TelemetryList {

@@ -19,7 +19,7 @@ import type { DeviceState, RiskLevel } from '@/types'
 import type { EChartsOption } from 'echarts'
 
 const device = useDeviceStore()
-const { telemetry, events, connect } = useRealtime()
+const { connected, telemetry, events, connect } = useRealtime()
 
 const state = ref<DeviceState | null>(null)
 const frameUrl = ref<string>('')
@@ -27,6 +27,8 @@ const distanceHistory = ref<{ t: string; v: number | null }[]>([])
 const speedHistory = ref<{ t: string; v: number | null }[]>([])
 let frameTimer: ReturnType<typeof setInterval> | undefined
 let disposed = false
+
+const live = computed(() => connected.value && telemetry.value !== null)
 
 const current = computed<DeviceState | null>(() => {
   if (telemetry.value) {
@@ -48,6 +50,8 @@ const current = computed<DeviceState | null>(() => {
   return state.value
 })
 
+const riskLevel = computed<RiskLevel>(() => live.value ? current.value?.risk_level ?? 'unknown' : 'unknown')
+
 const riskColor = computed(() => {
   const map: Record<RiskLevel, string> = {
     normal: 'var(--pg-risk-normal)',
@@ -55,7 +59,7 @@ const riskColor = computed(() => {
     danger: 'var(--pg-risk-danger)',
     unknown: 'var(--pg-risk-unknown)',
   }
-  return map[current.value?.risk_level ?? 'unknown']
+  return map[riskLevel.value]
 })
 
 // 距离趋势图
@@ -145,8 +149,8 @@ async function loadState() {
     const res = await listTelemetry(device.currentDeviceId, { limit: 60 })
     const items = res.items
     for (const it of items) {
-      pushHistory(distanceHistory.value, it.timestamp, it.distance)
-      pushHistory(speedHistory.value, it.timestamp, it.speed)
+      pushHistory(distanceHistory.value, it.timestamp, it.distance_m)
+      pushHistory(speedHistory.value, it.timestamp, it.speed_kmh)
     }
   } catch {
     /* ignore */
@@ -179,6 +183,8 @@ watch(
   () => telemetry.value,
   (t) => {
     if (!t) return
+    // 断线时保留最后读数供查看，实时标记由 live 单独控制。
+    state.value = t
     const ts = t.timestamp || new Date().toISOString()
     pushHistory(distanceHistory.value, ts, t.distance_m)
     pushHistory(speedHistory.value, ts, t.speed_kmh)
@@ -199,7 +205,8 @@ const sensorRows = computed(() => {
     name: n.label,
     lane: n.key === 'lane',
     status: (s.samples?.[n.key]?.status || 'unavailable') as never,
-    freshness: (s.freshness?.[n.key] ?? 'missing') as never,
+    freshness: (!live.value && s.freshness?.[n.key] === 'fresh'
+      ? 'stale' : s.freshness?.[n.key] ?? 'missing') as never,
     source: s.samples?.[n.key]?.source || '--',
   }))
 })
@@ -207,22 +214,30 @@ const sensorRows = computed(() => {
 
 <template>
   <div class="dashboard">
+    <el-alert
+      v-if="!live"
+      :title="connected ? '实时连接已建立，等待新的遥测数据' : '实时连接未建立或已断开，正在尝试连接'"
+      description="当前读数为上次获取的数据，设备在线状态和综合风险暂不可确认。"
+      type="warning"
+      show-icon
+      :closable="false"
+    />
     <!-- 风险等级 + 在线状态 -->
     <div class="risk-banner" :style="{ borderColor: riskColor }">
       <div class="risk-left">
         <div class="risk-label">综合风险</div>
         <div class="risk-value" :style="{ color: riskColor }">
-          {{ riskLabel(current?.risk_level ?? 'unknown') }}
+          {{ riskLabel(riskLevel) }}
         </div>
       </div>
       <div class="risk-meta">
-        <el-tag :type="current?.online ? 'success' : 'info'" effect="dark">
-          {{ current?.online ? '设备在线' : '设备离线' }}
+        <el-tag :type="live && current?.online ? 'success' : 'info'" effect="dark">
+          {{ !live ? '设备状态未知' : current?.online ? '设备在线' : '设备离线' }}
         </el-tag>
         <span class="time">{{ current?.timestamp ? new Date(current.timestamp).toLocaleTimeString() : '--' }}</span>
       </div>
       <div class="active-events" v-if="current?.active_events?.length">
-        <span class="ae-label">活跃告警：</span>
+        <span class="ae-label">{{ live ? '活跃告警：' : '上次告警：' }}</span>
         <el-tag v-for="e in current.active_events" :key="e" size="small" type="warning" effect="plain">
           {{ e }}
         </el-tag>
@@ -309,8 +324,8 @@ const sensorRows = computed(() => {
                 偏移：<b>{{ formatNumber(current?.lane.offset_ratio, 2) }}</b>
                 （{{ directionLabel(current?.lane.direction ?? 'unknown') }}）
               </div>
-              <el-tag :type="current?.lane.valid ? 'success' : 'info'" size="small">
-                {{ current?.lane.valid ? '检测有效' : '未检测到车道' }}
+              <el-tag :type="!live ? 'warning' : current?.lane.valid ? 'success' : 'info'" size="small">
+                {{ !live ? '数据过期' : current?.lane.valid ? '检测有效' : '未检测到车道' }}
               </el-tag>
             </div>
           </div>
@@ -338,8 +353,8 @@ const sensorRows = computed(() => {
             <el-table-column prop="name" label="传感器" />
             <el-table-column label="状态">
               <template #default="{ row }">
-                <el-tag v-if="row.lane" :type="current?.lane.valid ? 'success' : 'info'" size="small">
-                  {{ current?.lane.valid ? '检测有效' : '未检测到车道' }}
+                <el-tag v-if="row.lane" :type="!live ? 'warning' : current?.lane.valid ? 'success' : 'info'" size="small">
+                  {{ !live ? '数据过期' : current?.lane.valid ? '检测有效' : '未检测到车道' }}
                 </el-tag>
                 <el-tag v-else :type="sensorStatusTag(row.status)" size="small">
                   {{ sensorStatusText(row.status) }}

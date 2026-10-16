@@ -24,6 +24,13 @@ export function useRealtime() {
   let reconnectTimer: number | null = null
   let closedByUser = false
 
+  function invalidateConnection() {
+    connected.value = false
+    // 重连后必须等到新的推送，才能再次信任实时状态。
+    telemetry.value = null
+    deviceStatus.value = null
+  }
+
   function connect() {
     closedByUser = false
     open()
@@ -48,13 +55,14 @@ export function useRealtime() {
     }
 
     ws.onclose = () => {
-      connected.value = false
+      invalidateConnection()
       if (!closedByUser) {
         reconnectTimer = window.setTimeout(open, 3000)
       }
     }
 
     ws.onerror = () => {
+      invalidateConnection()
       ws?.close()
     }
   }
@@ -94,7 +102,7 @@ export function useRealtime() {
     }
     ws?.close()
     ws = null
-    connected.value = false
+    invalidateConnection()
   }
 
   onUnmounted(disconnect)

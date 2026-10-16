@@ -28,10 +28,11 @@ const menus = [
 
 const activeMenu = computed(() => route.path)
 const online = computed(() => {
+  if (!connected.value) return null
   const id = device.currentDeviceId
   if (telemetry.value?.device_id === id) return telemetry.value.online
   if (deviceStatus.value?.device_id === id) return deviceStatus.value.online
-  return device.devices.find((d) => d.device_id === id)?.online ?? false
+  return null
 })
 
 async function loadDevices() {
@@ -86,6 +87,7 @@ onMounted(() => {
         <div class="device-row">
           <span class="dot" :class="{ on: online, off: !online }" />
           <span class="device-name">{{ device.deviceName }}</span>
+          <el-tag v-if="online === null" size="small" type="info">状态未知</el-tag>
         </div>
         <div class="device-meta">
           <span>{{ device.currentDeviceId }}</span>

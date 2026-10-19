@@ -1,5 +1,13 @@
 # 树莓派边缘端接续状态
 
+## 2026-10-19 重刷后的运行环境
+
+树莓派 `zhangzhuhao@raspberrypi.local` 已重新配置：Debian 13 arm64、Python 3.13.5，项目位于 `/home/zhangzhuhao/PiGuard`，虚拟环境位于 `/home/zhangzhuhao/.venvs/piguard-edge`。项目依赖和 Picamera2、libcamera、SMBus、GPIO 库均可导入；I²C 已启用，`/dev/i2c-1` 可由当前用户访问。启动配置备份和验证日志在树莓派的 `~/piguard-setup-20261019/`。
+
+按用户要求，固定测试账号写入版本控制：`go-backend/.env.demo` 与 `edge/config/raspberrypi-demo.yaml`。本机执行 `./go-backend/scripts/run-demo.sh`，树莓派执行 `./edge/scripts/run-demo.sh` 或 `~/bin/piguard-edge`。前端继续在本机运行。电脑当前地址为 `192.168.43.121`。
+
+本轮硬件未连接，使用 mock 传感器和合成道路。树莓派测试 104 项通过、1 项因未安装 Go 跳过；实际 MQTT/HTTP 遥测、历史、预览 JPEG、软件拍照 Ack、模拟蜂鸣器 Ack、远程配置成功确认和正常离线均通过。测试实例已停止，后续按上述脚本启动。
+
 ## 2026-10-15 联调修复更新
 
 当前 checkout 包含前端、Go 后端和 Python 边缘端。本次补齐远程规则配置、设备 HTTP 事件确认、软件图片拍照/预览、MQTT 发送确认、首次连接重试、摄像头检测节流和 SIGTERM 退出，并修复前端 WS 代理、空预览弹错、轮询清理和在线显示。配置通过被忽略的 local.yaml 显式启用，见 edge/README.md。真实硬件驱动仍未实现。

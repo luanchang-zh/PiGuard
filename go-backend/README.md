@@ -2,6 +2,20 @@
 
 在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警与图片关联、配置同步、JPEG 上传/读取、WebSocket、认证接入和部署。无硬件软件验收使用真实 SQLite、HTTP、WS、认证 Mosquitto 与软件设备；真实传感器、GPIO 和相机留待硬件验收。
 
+## 课设演示启动
+
+[.env.demo](.env.demo) 保存纳入 Git 的固定测试账号，与 [树莓派演示配置](../edge/config/raspberrypi-demo.yaml) 配套。网页登录账号为 `platform`，密码为 `piguard-platform-http-demo`；设备 `car-001` 使用独立的 MQTT / HTTP 测试密码。
+
+本机安装 Go、Python 3、Mosquitto（含 `mosquitto_passwd`）后，在仓库根目录启动认证 Broker 和后端：
+
+```sh
+./go-backend/scripts/run-demo.sh
+```
+
+脚本监听 `1883` 和 `8080`，数据放在 `go-backend/data/demo/`；Ctrl+C 会停止本脚本启动的进程。优先使用系统 Mosquitto，也可自动使用 `data/demo/tools/` 下解包的便携版本；`PIGUARD_MOSQUITTO_BIN` 可指定 Broker 可执行文件。前端在另一终端执行 `cd frontend && npm run dev -- --host 0.0.0.0`，树莓派运行 `./edge/scripts/run-demo.sh`。
+
+使用 Docker 时也可直接运行 `docker compose --env-file .env.demo up --build`。电脑局域网 IP 变化后，同步修改树莓派配置地址和 `.env.demo` 中的浏览器允许来源。
+
 ## 软件验收
 
 验收按三步执行：V1 更新旧契约断言并完成软件回归；V2 使用认证 Compose 验证真实网络、设备 ACL 和故障恢复；V3 使用真实浏览器验证会话，并持续运行 30 分钟。结果分别记录通过、失败、环境阻塞和硬件待验。

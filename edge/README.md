@@ -34,6 +34,29 @@ P1 已实现本地模拟数据链。P2 已实现遥测/状态编码、MQTT 会�
 - edge与Go使用不同SQLite文件。后端运行在另一checkout/主机，通过MQTT和HTTP联调。
 - 同一device_id只能有一个活跃边缘实例。新实例上线前关闭该设备的Go模拟器。
 
+## 树莓派无硬件演示
+
+`config/raspberrypi-demo.yaml` 是纳入 Git 的课设测试配置，默认设备 `car-001`，使用 mock 传感器、合成道路、远程配置和软件图片上传。MQTT / HTTP 设备密码分别为 `piguard-device-mqtt-demo`、`piguard-device-http-demo`，与 [平台演示配置](../go-backend/.env.demo) 一致。
+
+在 Raspberry Pi OS / Debian 13 的仓库根目录安装：
+
+```sh
+sudo apt-get update
+sudo apt-get install -y git python3-venv python3-pip python3-picamera2 python3-libcamera python3-smbus python3-smbus2 python3-gpiozero python3-lgpio i2c-tools rpicam-apps-lite
+python3 -m venv --system-site-packages "$HOME/.venvs/piguard-edge"
+"$HOME/.venvs/piguard-edge/bin/python" -m pip install -e './edge[dev]'
+```
+
+虚拟环境通过 `--system-site-packages` 使用系统安装的 Picamera2、libcamera 和 GPIO 库。备份 `/boot/firmware/config.txt` 后，可执行 `sudo raspi-config nonint do_i2c 0` 开启 I²C。若当前启动中尚未出现 `/dev/i2c-1`，执行 `sudo dtoverlay i2c1 && sudo modprobe i2c-dev` 即时加载接口。摄像头保留系统自动识别。
+
+本机平台运行 [演示启动脚本](../go-backend/scripts/run-demo.sh)，树莓派运行：
+
+```sh
+./edge/scripts/run-demo.sh
+```
+
+配置中的电脑地址为 `192.168.43.121`；网络变化后同步修改 `mqtt.host` 和 `http.base_url`。默认环境目录可通过 `PIGUARD_EDGE_PYTHON` 指定另一个 Python。相邻的 `config/local.yaml` 仍按加载器规则覆盖配置，运行这套演示时应检查是否有旧覆盖。
+
 目录骨架可在edge工作目录执行导入检查（并非服务启动）：
 
 ```sh

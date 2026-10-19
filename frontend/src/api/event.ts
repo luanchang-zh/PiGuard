@@ -9,8 +9,8 @@ export interface EventQuery {
   limit?: number
 }
 
-export function listEvents(deviceId: string, query: EventQuery = {}) {
+export function listEvents(deviceId: string, query: EventQuery = {}, silent = false) {
   return request
-    .get<ApiResponse<EventList>>(`/devices/${deviceId}/events`, { params: query })
-    .then((r) => r.data.data!)
+    .get<ApiResponse<EventList>>(`/devices/${deviceId}/events`, { params: query, silent })
+    .then((r) => r.data.data ?? { items: [] })
 }

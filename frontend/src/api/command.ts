@@ -8,5 +8,7 @@ export function createCommand(deviceId: string, body: CommandCreateRequest) {
 }
 
 export function getCommand(commandId: string) {
-  return request.get<ApiResponse<CommandView>>(`/commands/${commandId}`).then((r) => r.data.data!)
+  return request
+    .get<ApiResponse<CommandView>>(`/commands/${commandId}`, { silent: true })
+    .then((r) => r.data.data!)
 }

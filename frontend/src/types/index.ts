@@ -260,6 +260,11 @@ export interface WsEvent {
   level: EventLevel
   timestamp: string
   data?: Record<string, unknown>
+  frame_id?: string
+  snapshot_id?: string
+  snapshot_available?: boolean
+  snapshot_url?: string
+  snapshot_state?: string
 }
 
 export interface WsEventImageUpdate {

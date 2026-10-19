@@ -11,29 +11,36 @@ export const useAuthStore = defineStore('auth', () => {
   const session = ref<SessionInfo | null>(null)
   const csrfToken = ref<string>(localStorage.getItem(CSRF_KEY) || '')
 
-  async function login(username: string, password: string) {
-    const info = await apiLogin(username, password)
-    session.value = info
-    if (info.csrf_token) {
+  function apply(info: SessionInfo | null | undefined) {
+    session.value = info ?? null
+    if (info?.csrf_token) {
       csrfToken.value = info.csrf_token
       localStorage.setItem(CSRF_KEY, info.csrf_token)
     }
+  }
+
+  async function login(username: string, password: string) {
+    const info = await apiLogin(username, password)
+    apply(info)
     return info
   }
 
   async function refresh() {
     try {
       const info = await getSession()
-      session.value = info ?? null
-      if (info?.csrf_token) {
-        csrfToken.value = info.csrf_token
-        localStorage.setItem(CSRF_KEY, info.csrf_token)
-      }
-      return info
+      apply(info)
+      return info ?? null
     } catch {
       session.value = null
       return null
     }
+  }
+
+  /** 只清理本地状态（会话已在服务端失效时使用） */
+  function clear() {
+    session.value = null
+    csrfToken.value = ''
+    localStorage.removeItem(CSRF_KEY)
   }
 
   async function logout() {
@@ -42,10 +49,8 @@ export const useAuthStore = defineStore('auth', () => {
     } catch {
       /* 忽略网络错误 */
     }
-    session.value = null
-    csrfToken.value = ''
-    localStorage.removeItem(CSRF_KEY)
+    clear()
   }
 
-  return { session, csrfToken, login, refresh, logout }
+  return { session, csrfToken, login, refresh, clear, logout }
 })

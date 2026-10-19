@@ -1,0 +1,97 @@
+/*
+ * PiGuard 设计令牌。
+ * 视觉方向：夜间车载 HUD —— 深色玻璃面板、青色主光、风险等级色严格语义化。
+ * 组件只引用这里的变量，不直接写色值，便于统一调整。
+ */
+:root {
+  color-scheme: dark;
+
+  /* ---------- 字体 ---------- */
+  --pg-font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Segoe UI', Roboto, sans-serif;
+  --pg-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SFMono-Regular',
+    Menlo, Consolas, monospace;
+
+  /* ---------- 背景层级 ---------- */
+  --pg-bg: #060a13;
+  --pg-bg-deep: #03060c;
+  --pg-surface: rgba(17, 25, 40, 0.72);
+  --pg-surface-solid: #0f1726;
+  --pg-surface-2: rgba(30, 41, 64, 0.55);
+  --pg-surface-3: rgba(51, 65, 95, 0.45);
+  --pg-surface-hover: rgba(56, 72, 104, 0.35);
+  --pg-overlay: rgba(3, 6, 12, 0.72);
+
+  /* ---------- 描边 ---------- */
+  --pg-border: rgba(148, 163, 184, 0.12);
+  --pg-border-strong: rgba(148, 163, 184, 0.22);
+  --pg-border-glow: rgba(34, 211, 238, 0.35);
+
+  /* ---------- 文字 ---------- */
+  --pg-text: #e6edf7;
+  --pg-text-2: #b4c0d3;
+  --pg-text-muted: #8392a8;
+  --pg-text-faint: #56647a;
+  --pg-text-inverse: #04121a;
+
+  /* ---------- 品牌色 ---------- */
+  --pg-primary: #22d3ee;
+  --pg-primary-strong: #0fb5d6;
+  --pg-primary-deep: #0e7490;
+  --pg-primary-soft: rgba(34, 211, 238, 0.12);
+  --pg-primary-glow: rgba(34, 211, 238, 0.45);
+  --pg-accent: #818cf8;
+  --pg-accent-soft: rgba(129, 140, 248, 0.14);
+  --pg-gradient-brand: linear-gradient(135deg, #22d3ee 0%, #3b82f6 55%, #818cf8 100%);
+
+  /* ---------- 风险/状态语义色 ---------- */
+  --pg-ok: #34d399;
+  --pg-ok-soft: rgba(52, 211, 153, 0.14);
+  --pg-warn: #fbbf24;
+  --pg-warn-soft: rgba(251, 191, 36, 0.14);
+  --pg-danger: #fb5174;
+  --pg-danger-soft: rgba(251, 81, 116, 0.15);
+  --pg-unknown: #64748b;
+  --pg-unknown-soft: rgba(100, 116, 139, 0.16);
+  --pg-info: #60a5fa;
+  --pg-info-soft: rgba(96, 165, 250, 0.14);
+
+  /* ---------- 指标色（图表与指标卡） ---------- */
+  --pg-c-speed: #a78bfa;
+  --pg-c-distance: #22d3ee;
+  --pg-c-temp: #fb923c;
+  --pg-c-yaw: #34d399;
+  --pg-c-lane: #f472b6;
+
+  /* ---------- 圆角 / 阴影 / 动效 ---------- */
+  --pg-radius-xs: 6px;
+  --pg-radius-sm: 10px;
+  --pg-radius: 14px;
+  --pg-radius-lg: 20px;
+  --pg-radius-pill: 999px;
+
+  --pg-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --pg-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.25);
+  --pg-shadow-lg: 0 30px 80px -20px rgba(0, 0, 0, 0.75);
+  --pg-inset-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  --pg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --pg-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --pg-dur-fast: 140ms;
+  --pg-dur: 240ms;
+  --pg-dur-slow: 480ms;
+
+  /* ---------- 布局 ---------- */
+  --pg-sidebar-w: 248px;
+  --pg-sidebar-w-collapsed: 76px;
+  --pg-topbar-h: 64px;
+  --pg-gap: 18px;
+  --pg-page-pad: 24px;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --pg-gap: 14px;
+    --pg-page-pad: 14px;
+  }
+}

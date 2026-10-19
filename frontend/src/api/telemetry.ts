@@ -7,8 +7,8 @@ export interface TelemetryQuery {
   limit?: number
 }
 
-export function listTelemetry(deviceId: string, query: TelemetryQuery = {}) {
+export function listTelemetry(deviceId: string, query: TelemetryQuery = {}, silent = false) {
   return request
-    .get<ApiResponse<TelemetryList>>(`/devices/${deviceId}/telemetry`, { params: query })
-    .then((r) => r.data.data!)
+    .get<ApiResponse<TelemetryList>>(`/devices/${deviceId}/telemetry`, { params: query, silent })
+    .then((r) => r.data.data ?? { items: [] })
 }

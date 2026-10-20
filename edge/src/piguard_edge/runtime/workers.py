@@ -63,6 +63,7 @@ class Sampler:
             width=config.sensors.camera.width,
             height=config.sensors.camera.height,
             process_fps=config.sensors.camera.process_fps,
+            camera_config=config.sensors.camera,
         )
         return cls(
             sources,

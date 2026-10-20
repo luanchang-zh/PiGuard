@@ -1,5 +1,6 @@
-# 课设测试配置：使用仓库内公开的演示账号，全部数据来自 mock / 合成道路。
-# 电脑地址变更时，同步修改 mqtt.host 与 http.base_url。
+# 课设测试配置：传感器仍为 mock，摄像头来自 USB 连接的 Ubuntu 电脑。
+# USB 部署步骤见 docs/deployment/usb-pc-camera.md；启动前设置 PIGUARD_CAMERA_TOKEN。
+# 平台地址变更时，同步修改 mqtt.host 与 http.base_url；摄像头电脑地址独立配置。
 device:
   id: car-001
   mode: mock
@@ -37,12 +38,16 @@ sensors:
     driver: mock
     sample_hz: 1
   camera:
-    driver: synthetic
+    driver: remote
     capture_fps: 10
     process_fps: 5
     width: 640
     height: 480
     video_path: ""
+    remote_url: http://192.168.7.1:8765/frame.jpg
+    remote_token_env: PIGUARD_CAMERA_TOKEN
+    remote_timeout_s: 0.5
+    remote_max_age_ms: 1000
 
 speed:
   driver: scenario

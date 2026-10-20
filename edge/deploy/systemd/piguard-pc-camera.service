@@ -1,0 +1,16 @@
+[Unit]
+Description=PiGuard Ubuntu webcam over USB Ethernet
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/piguard/camera.env
+ExecStart=%h/.venvs/piguard-camera/bin/python -m piguard_edge.pc_camera --host 192.168.7.1 --device /dev/video0
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

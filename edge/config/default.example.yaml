@@ -39,6 +39,7 @@ sensors:
     sample_hz: 1
   camera:
     driver: synthetic
+    # 实际摄像头：参见 raspberrypi-demo.yaml 的 remote 配置和 USB 部署文档。
     capture_fps: 10
     process_fps: 5
     width: 640

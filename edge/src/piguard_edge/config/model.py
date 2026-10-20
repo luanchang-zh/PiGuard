@@ -49,6 +49,10 @@ class CameraConfig:
     width: int
     height: int
     video_path: str
+    remote_url: str = ""
+    remote_token_env: str = "PIGUARD_CAMERA_TOKEN"
+    remote_timeout_s: float = 0.5
+    remote_max_age_ms: int = 1000
 
 
 @dataclass(frozen=True, slots=True)

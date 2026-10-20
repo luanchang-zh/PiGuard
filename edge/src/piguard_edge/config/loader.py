@@ -6,8 +6,10 @@ the directory of the file passed to load_config. A sibling local.yaml deep
 merges over it.
 """
 
+import math
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -174,24 +176,45 @@ def _http(value: Any) -> HttpConfig:
 
 def _sensors(value: Any) -> SensorsConfig:
     data = _section(value, {"distance", "gyro", "temperature", "camera"}, "sensors")
-    camera = _section(
-        data["camera"],
-        {"driver", "capture_fps", "process_fps", "width", "height", "video_path"},
-        "sensors.camera",
-    )
     return SensorsConfig(
         distance=_rate(data["distance"], "sensors.distance"),
         gyro=_rate(data["gyro"], "sensors.gyro"),
         temperature=_rate(data["temperature"], "sensors.temperature"),
-        camera=CameraConfig(
-            driver=_text(camera["driver"], "sensors.camera.driver"),
-            capture_fps=_int(camera["capture_fps"], "sensors.camera.capture_fps", minimum=1),
-            process_fps=_int(camera["process_fps"], "sensors.camera.process_fps", minimum=1),
-            width=_int(camera["width"], "sensors.camera.width", minimum=1),
-            height=_int(camera["height"], "sensors.camera.height", minimum=1),
-            video_path=_optional_text(camera["video_path"], "sensors.camera.video_path"),
-        ),
+        camera=_camera(data["camera"]),
     )
+
+
+def _camera(value: Any) -> CameraConfig:
+    path = "sensors.camera"
+    required = {"driver", "capture_fps", "process_fps", "width", "height", "video_path"}
+    optional = {"remote_url", "remote_token_env", "remote_timeout_s", "remote_max_age_ms"}
+    if not isinstance(value, dict):
+        raise ConfigError(f"{path} must be a mapping")
+    _unknown(value, required | optional, path)
+    _require(value, required, path)
+    config = CameraConfig(
+        driver=_text(value["driver"], f"{path}.driver"),
+        capture_fps=_int(value["capture_fps"], f"{path}.capture_fps", minimum=1),
+        process_fps=_int(value["process_fps"], f"{path}.process_fps", minimum=1),
+        width=_int(value["width"], f"{path}.width", minimum=1, maximum=1920),
+        height=_int(value["height"], f"{path}.height", minimum=1, maximum=1080),
+        video_path=_optional_text(value["video_path"], f"{path}.video_path"),
+        remote_url=_optional_text(value.get("remote_url", ""), f"{path}.remote_url"),
+        remote_token_env=_text(value.get("remote_token_env", "PIGUARD_CAMERA_TOKEN"), f"{path}.remote_token_env"),
+        remote_timeout_s=_number(value.get("remote_timeout_s", 0.5), f"{path}.remote_timeout_s", minimum=0, inclusive=False),
+        remote_max_age_ms=_int(value.get("remote_max_age_ms", 1000), f"{path}.remote_max_age_ms", minimum=1),
+    )
+    if not math.isfinite(config.remote_timeout_s) or config.remote_timeout_s > 5:
+        raise ConfigError(f"{path}.remote_timeout_s must be finite and <= 5")
+    if config.driver == "remote":
+        try:
+            url = urlsplit(config.remote_url)
+            valid = url.scheme in {"http", "https"} and url.hostname and url.port != 0
+        except ValueError:
+            valid = False
+        if not valid or url.username or url.password or url.query or url.fragment or url.path != "/frame.jpg":
+            raise ConfigError(f"{path}.remote_url must be http(s)://host:port/frame.jpg without credentials or query")
+    return config
 
 
 def _rate(value: Any, path: str) -> RateConfig:

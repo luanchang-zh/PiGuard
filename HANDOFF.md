@@ -1,5 +1,11 @@
 # 树莓派边缘端接续状态
 
+## 2026-10-20 摄像头改为 USB 连接的 Ubuntu 电脑
+
+用户确认树莓派为 4B，另一台摄像头电脑为 Ubuntu 24.04。最新远程 main 已快进整合至本地 `9bdc88e`。新增 Ubuntu `python -m piguard_edge.pc_camera` 服务与 Pi `remote` 摄像头驱动，使用 USB Ethernet 的 JPEG/Token 接口；`raspberrypi-demo.yaml` 默认取 `192.168.7.1:8765`，原有默认示例仍用合成道路。两端需要相同的 `PIGUARD_CAMERA_TOKEN`。部署规划、供电、USB-C 网卡配置、安装和硬件验收见 [USB 摄像头部署](docs/deployment/usb-pc-camera.md)。当前未连接目标 Ubuntu 或 Pi，尚未执行目标硬件部署。
+
+本地边缘端单元与 Go 协议契约回归 130 项通过，新增摄像头测试 25 项，未调用这台电脑的摄像头。验证范围见 [软件测试记录](docs/verification/unit/usb-pc-camera.md)。
+
 ## 2026-10-19 重刷后的运行环境
 
 树莓派 `zhangzhuhao@raspberrypi.local` 已重新配置：Debian 13 arm64、Python 3.13.5，项目位于 `/home/zhangzhuhao/PiGuard`，虚拟环境位于 `/home/zhangzhuhao/.venvs/piguard-edge`。项目依赖和 Picamera2、libcamera、SMBus、GPIO 库均可导入；I²C 已启用，`/dev/i2c-1` 可由当前用户访问。启动配置备份和验证日志在树莓派的 `~/piguard-setup-20261019/`。

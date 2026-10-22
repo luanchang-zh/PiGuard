@@ -60,14 +60,23 @@ class CommandHandler:
         for command_id in self._actuators.take_preempted():
             self._finish(command_id, "failed", "DEVICE_BUSY", "automatic warning preempted the test")
         manual = self._actuators.manual
-        if manual is None or now_ns < manual.until_ns:
+        if manual is None:
+            return
+        if self._actuators.error:
+            self._actuators.clear_test()
+            self._finish(manual.command_id, "failed", "ACTUATOR_UNAVAILABLE", "GPIO output failed")
+            return
+        if now_ns < manual.until_ns:
             return
         if manual.kind == "indicator":
             result = {"color": manual.color, "message": "indicator test completed"}
         else:
             result = {"message": "buzzer test completed"}
-        self._finish(manual.command_id, "success", result=result)
         self._actuators.clear_test()
+        if self._actuators.error:
+            self._finish(manual.command_id, "failed", "ACTUATOR_UNAVAILABLE", "GPIO output failed")
+        else:
+            self._finish(manual.command_id, "success", result=result)
 
     def cancel_for_shutdown(self) -> None:
         manual = self._actuators.manual
@@ -138,9 +147,10 @@ class CommandHandler:
             return "DEVICE_NOT_SUPPORTED", "scenario commands are not available in hardware mode"
         if command.command_type in ("scenario.start", "scenario.stop") and self._engine is None:
             return "DEVICE_NOT_SUPPORTED", "scenario engine is not available"
-        if command.command_type in ("buzzer.test", "indicator.test") and self._mode != "mock":
-            return "ACTUATOR_UNAVAILABLE", "hardware actuator is not configured"
         if command.command_type in ("buzzer.test", "indicator.test"):
+            kind = "buzzer" if command.command_type == "buzzer.test" else "indicator"
+            if not self._actuators.supports(kind, self._mode):
+                return "ACTUATOR_UNAVAILABLE", "hardware actuator is not configured"
             if self._actuators.risk_level in _ALARM or self._actuators.manual is not None:
                 return "DEVICE_BUSY", "automatic warning is active" if self._actuators.risk_level in _ALARM else "another test is still running"
             duration = command.params["duration_ms"]

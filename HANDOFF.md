@@ -1,5 +1,15 @@
 # 树莓派边缘端接续状态
 
+## 2026-10-22 真实输入与 USB 链路开发
+
+最新代码已接入 HC-SR04（BCM23/24）、MPU 系列陀螺仪（当前识别为 MPU6500，0x68）、AHT20（0x38）、物理 Pin11 / BCM17 蜂鸣器，以及电脑摄像头 HTTP JPEG 输入。选择 `edge/config/raspberrypi-connected-demo.yaml`，设备模式为 hardware；速度保留场景模拟并标记 mock，距离保留桌面 ×100 映射。湿度在 AHT20 驱动中解码，当前页面/遥测仍按课设 v1 使用温度。LED 未接。
+
+USB 电脑地址 `10.12.194.2/28`，树莓派 `10.12.194.1/28`。已定位官方 ICS 服务每约 14 秒切到 DHCP、临时撤掉地址导致 HTTP 超时；停用角色轮换后，实机 600 次 HTTP 请求全成功，最大约 21.4 ms。此前还处理过 ECM 初始化卡住及 Mihomo TUN 拦截。配置步骤已做成 `configure-usb-pi.sh` / `configure-usb-host.sh`，详见 edge/README.md。电脑摄像头由 `serve-pc-camera.py` 提供，示例 token 和平台测试账号一并纳入 Git。
+
+用户已经确认网页蜂鸣器测试听到声音。原 CSI 摄像头排查显示模块接入时 SCL 被拉低，空排线对照恢复，当前采用电脑摄像头方案。用户现已拔下树莓派并要求只完成开发，因此新增传感器/视频组合使用离线替身验证，未继续连接设备。电脑摄像头采集测试进程也已停止。设备上的旧配置与进程状态以重新连接后为准；最新接入代码仍在本机工作区。
+
+下方均为历史阶段记录；旧的“没有硬件驱动”“硬件模式不支持蜂鸣器”“本目录不含后端”描述由本节和最新 README 替代。
+
 ## 2026-10-20 摄像头改为 USB 连接的 Ubuntu 电脑
 
 用户确认树莓派为 4B，另一台摄像头电脑为 Ubuntu 24.04。最新远程 main 已快进整合至本地 `9bdc88e`。新增 Ubuntu `python -m piguard_edge.pc_camera` 服务与 Pi `remote` 摄像头驱动，使用 USB Ethernet 的 JPEG/Token 接口；`raspberrypi-demo.yaml` 默认取 `192.168.7.1:8765`，原有默认示例仍用合成道路。两端需要相同的 `PIGUARD_CAMERA_TOKEN`。部署规划、供电、USB-C 网卡配置、安装和硬件验收见 [USB 摄像头部署](docs/deployment/usb-pc-camera.md)。当前未连接目标 Ubuntu 或 Pi，尚未执行目标硬件部署。

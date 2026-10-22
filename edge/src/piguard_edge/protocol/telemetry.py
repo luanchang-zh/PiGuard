@@ -45,7 +45,7 @@ def build_telemetry(
         "distance": _distance(state.distance, distance_scale, source),
         "temperature": _scalar(state.temperature, UNIT_C, source),
         "gyro": _gyro(state.gyro, source),
-        "lane": _lane(state.frame),
+        "lane": _lane_with_metadata(state.frame),
         "risk": {"level": risk_level, "active_events": list(active_events or [])},
     }
 
@@ -124,6 +124,13 @@ def _gyro(sample: Sample[GyroReading] | None, source: str) -> dict[str, object]:
         "status": sample.status.value,
         "sample_at": format_utc(sample.sample_at),
     }
+
+
+def _lane_with_metadata(frame: Frame | None) -> dict[str, object]:
+    body = _lane(frame)
+    if frame is not None:
+        body.update(source=frame.source, status=frame.status.value)
+    return body
 
 
 def _lane(frame: Frame | None) -> dict[str, object]:

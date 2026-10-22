@@ -2,7 +2,7 @@
 
 Python边缘工程，开发分支为 `edge`。总规范见[开发规划](../docs/planning/PLAN.md)，当前实施步骤见[开发电脑上的实施计划](../docs/planning/implementation/pc-edge-software.md)，接续状态见[HANDOFF](../HANDOFF.md)。课设与网络规范在 `docs/constraints/`。
 
-P1 已实现本地模拟数据链。P2 已实现遥测/状态编码、MQTT 会话和 `python -m piguard_edge`。P3 已实现四条规则、模拟执行器和事件缓存。P4 已实现四种下行命令、Ack 和模拟执行器仲裁。P5 已实现合成道路和本地录像的车道检测；当前也支持 USB 网络连接的 Ubuntu 电脑摄像头。其他传感器和执行器的硬件驱动尚未实现。测试报告见 [P1](../docs/verification/unit/p1-local-data-chain.md)、[P2](../docs/verification/unit/p2-uplink.md)、[P3](../docs/verification/unit/p3-local-warnings.md)、[P4](../docs/verification/unit/p4-commands.md)、[P5](../docs/verification/unit/p5-lane.md) 与 [联调](../docs/verification/integration/p5-live-stack.md)。
+P1–P5 的模拟数据、遥测、规则、命令和车道检测已实现。现已增加 HC-SR04、MPU6050/6500/9250、AHT20、GPIO 蜂鸣器和电脑摄像头 HTTP JPEG 驱动。当前实机配置与启动方法见下方“真实传感器与电脑摄像头”；较早的软件测试报告见 [P1](../docs/verification/unit/p1-local-data-chain.md)、[P2](../docs/verification/unit/p2-uplink.md)、[P3](../docs/verification/unit/p3-local-warnings.md)、[P4](../docs/verification/unit/p4-commands.md)、[P5](../docs/verification/unit/p5-lane.md) 与 [联调](../docs/verification/integration/p5-live-stack.md)。
 
 ## 模块职责
 
@@ -26,10 +26,10 @@ P1 已实现本地模拟数据链。P2 已实现遥测/状态编码、MQTT 会�
 
 ## 工程约定
 
-- 实机型号为 HC-SR04（配 8 路电平转换模块）、CSI 传感器 OV5647IMXZ19、GY-521 MPU6050、AHT20+BMP280 模块中的 AHT20。默认配置仍是 mock。接线、地址和上板顺序见开发规划第 1.1 节与 P6。
+- 实机输入为 HC-SR04（配电平转换模块）、已识别为 MPU6500 的陀螺仪、AHT20。当前摄像头方案为电脑摄像头经 USB 以太网传图；原 OV5647 的硬件排查见 HANDOFF。默认配置仍是 mock。
 - Python目标版本≥3.11。pyproject仅描述可安装包，运行时依赖将在对应阶段锁定；Picamera2/GPIO等硬件依赖不能阻止mock启动。
 - 配置文件相对路径按配置文件目录解析。示例的 `../data/edge.db` 指向edge/data。
-- 本地覆盖使用config/local.yaml或环境变量，真实凭据、数据库、大视频和截图不进Git。
+- 本地覆盖使用config/local.yaml或环境变量。课设固定示例密码按用户要求随配置入 Git；数据库、大视频和运行截图不进 Git。
 - 线上schema_version=1，时间为UTC；持续时间用单调时钟；读取故障保留状态和null，不能补0。
 - edge与Go使用不同SQLite文件。后端运行在另一checkout/主机，通过MQTT和HTTP联调。
 - 同一device_id只能有一个活跃边缘实例。新实例上线前关闭该设备的Go模拟器。
@@ -42,7 +42,7 @@ P1 已实现本地模拟数据链。P2 已实现遥测/状态编码、MQTT 会�
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y git python3-venv python3-pip
+sudo apt-get install -y git python3-venv python3-pip python3-smbus2 python3-lgpio i2c-tools
 python3 -m venv --system-site-packages "$HOME/.venvs/piguard-edge"
 "$HOME/.venvs/piguard-edge/bin/python" -m pip install -e './edge[dev]'
 ```
@@ -72,7 +72,7 @@ PYTHONPATH=src python -c 'import piguard_edge; print(piguard_edge.__version__)'
 
 ## 2026-10-15 软件联调修复
 
-已补齐设备 HTTP 事件确认、远程规则配置、软件帧拍照/预览上传、启动连接重试和 SIGTERM 停止。实机传感器和 GPIO 驱动仍未实现；mock 图片来自合成道路或本地录像。以上更新替代本文早期阶段对“配置、图片、HTTP 确认未实现”的描述。
+已补齐设备 HTTP 事件确认、远程规则配置、软件帧拍照/预览上传、启动连接重试和 SIGTERM 停止。此节记录较早的软件联调；最新硬件驱动与配置见下节。
 
 在被 Git 忽略的 `config/local.yaml` 中配置：
 
@@ -112,3 +112,78 @@ python -m pytest tests/integration/test_platform_features.py -q
 ```
 
 验证范围与限制见 [本次记录](../docs/verification/integration/p5-platform-features.md)。
+
+## 真实传感器与电脑摄像头（2026-10-22）
+
+实机配置为已纳入 Git 的 `config/raspberrypi-connected-demo.yaml`。它与平台 `.env.demo` 使用同一套固定示例密码，直接使用 USB 对端 `10.12.194.2`。
+
+仓库同时保留 Ubuntu 摄像头部署入口，按所选配置使用配套服务：
+
+| 边缘配置 | 摄像头驱动与服务 | 默认地址/认证 |
+| --- | --- | --- |
+| `raspberrypi-connected-demo.yaml` | `network` + `scripts/serve-pc-camera.py`（FFmpeg） | `10.12.194.2:8090`，YAML 固定 `stream_token`；真实传感器 |
+| `raspberrypi-demo.yaml` | `remote` + `python -m piguard_edge.pc_camera`（OpenCV） | `192.168.7.1:8765`，两端 `PIGUARD_CAMERA_TOKEN`；mock 传感器 |
+| `default.example.yaml` | `synthetic` | 合成道路；纯软件演示 |
+
+两种网络摄像头使用各自的采样时间头，配置需匹配对应服务。Ubuntu/systemd 方案详见 [部署说明](../docs/deployment/usb-pc-camera.md)，下文描述 `connected` 配置。
+
+| 输入/输出 | 驱动 | 当前配置 |
+| --- | --- | --- |
+| HC-SR04 | `hcsr04` | BCM23 触发、BCM24 回波，经电平转换；10 Hz |
+| 陀螺仪 | `mpu` | I²C1、0x68、500 dps、50 Hz；支持 WHO_AM_I 0x68/0x70/0x71 |
+| 温度 | `aht20` | I²C1、0x38、1 Hz；检查校准状态、忙标志和 CRC |
+| 电脑摄像头 | `network` | HTTP JPEG 10 fps，车道检测 5 fps，640×480 |
+| 蜂鸣器 | `gpio` | 物理 Pin11 = BCM17，500 Hz 软件方波 |
+| 速度 | `scenario` | 场景模拟，遥测明确标记 `source=mock` |
+
+温度、距离、三轴角速度和摄像头使用 `source=hardware`。AHT20 同时解出湿度并保存在驱动的 `humidity_rh`，当前 v1 页面/遥测只接温度。BMP280 地址保留为 0x77，当前不采集气压。LED 未接，真实模式下灯光测试返回 `ACTUATOR_UNAVAILABLE`。
+
+桌面演示沿用 `distance_scale: 100`：真实测距 0.20 m 对应规则和页面里的演示车距 20 m。遥测分别保存 `raw_value=0.20`、`mapped_value=20` 和 `scale=100`；直接使用物理米数时将比例改为 1，并配套调整预警距离和时距参数。
+
+采样线程保留原始采样时刻；I²C 转换、超声波等回波和网络取帧在后台运行，主循环继续处理规则、命令和遥测。读取失败上报 `timeout/error/unavailable` 和空值。网络断流或帧超过 1 秒后停用图像和车道结果，拍照走已有上传/Ack 流程。相同帧 ID 不刷新时间，HTTP 客户端直连对端并拒绝重定向。
+
+### USB 以太网
+
+USB-C 线需要支持数据传输。先通过系统的 `rpi-usb-gadget` 启用以太网 gadget；树莓派有 `usb0` 后，从仍可用的 SSH 会话在仓库根目录执行：
+
+```sh
+sudo ./edge/scripts/configure-usb-pi.sh
+# 首次保存 g_ether MAC 后重启一次，再配置电脑端接口：
+sudo reboot
+```
+
+脚本关闭官方 ICS 服务的 DHCP/共享角色轮换，建立 `10.12.194.1/28` 固定地址，不改变 Wi-Fi 默认路由；原连接概况和 ICS 状态备份到 `/var/backups/piguard-usb/`。使用 `g_ether` 时，将两端 MAC 保存到 `/etc/modprobe.d/piguard-usb-addresses.conf`；模块参数为空时使用固定示例 MAC，重启后生效，使电脑接口名稳定。
+
+Linux 电脑安装 NetworkManager 后，用 `nmcli device` 找到 USB 网卡名，再在仓库根目录执行（替换实际接口名）：
+
+```sh
+sudo ./edge/scripts/configure-usb-host.sh enx061eb8028872
+```
+
+电脑固定为 `10.12.194.2/28`，不抢占默认路由。脚本检测到 Mihomo 的 `inet4_local_address_set` 时加入 USB 网段直连例外；代理重启重建规则后可重跑本脚本。其他代理需将 `10.12.194.0/28` 配为直连。
+
+先前超时有两层原因：USB ECM 初始化曾卡住；恢复后，ICS 每约 14 秒尝试 DHCP 又短暂撤掉 USB 地址。固定角色后，实机连续 600 次 HTTP 请求全部成功，最大耗时约 21.4 ms。若冷启动出现 ECM TX watchdog、USB 两端互不通，可通过 Wi-Fi SSH 在停止边缘程序后重新加载 `g_ether` 并激活上述连接；此操作会断开 USB 链路。系统问题参考 [官方 gadget 工程](https://github.com/raspberrypi/rpi-usb-gadget) 的 [ECM 端点锁死修复讨论](https://github.com/raspberrypi/rpi-usb-gadget/pull/31)。
+
+### 启动顺序
+
+以下命令均在仓库根目录执行。先在电脑启动后端/MQTT，再启动摄像头服务；Linux 电脑需安装 FFmpeg，摄像头设备默认为 `/dev/video0`：
+
+```sh
+./go-backend/scripts/run-demo.sh
+# 另一个终端：
+python3 edge/scripts/serve-pc-camera.py --bind 10.12.194.2 --port 8090
+# 前端终端：
+cd frontend && npm run dev -- --host 0.0.0.0
+```
+
+摄像头接口 `/frame.jpg` 和 `/health` 使用 `Authorization: Bearer piguard-camera-demo`。可用 `--device`、`--width`、`--height`、`--fps`、`--token` 修改；改 token 后同步修改实机 YAML 的 `stream_token`。摄像头服务只在启动期间采集，Ctrl+C 会停止 FFmpeg。
+
+树莓派安装前文的系统库和 Python 环境后，执行 `sudo raspi-config nonint do_i2c 0` 开启 I²C，并重启使 `/dev/i2c-1` 可用；然后在仓库根目录启动：
+
+```sh
+PIGUARD_EDGE_CONFIG=config/raspberrypi-connected-demo.yaml ./edge/scripts/run-demo.sh
+```
+
+`PIGUARD_EDGE_CONFIG` 的相对路径按 `edge/` 目录解释，也可传绝对路径。启动前停止相同 `car-001` 的旧边缘进程/Go 模拟器；检查相邻 `local.yaml` 是否有旧覆盖。蜂鸣器保留自动预警优先级，已有 warning/danger 时手工测试会返回 `DEVICE_BUSY`。
+
+本轮在拔下树莓派后完成传感器和网络视频接入，使用假 I²C/GPIO、生成 JPEG 和本机临时 HTTP 服务做自动化测试；新组合的上板联调待设备重新连接。拔下之前，网页蜂鸣器测试已由用户确认听到声音，USB 的 600 请求测试已完成。

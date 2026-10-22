@@ -80,3 +80,33 @@ func TestStatusWillAndRequiredFields(t *testing.T) {
 		}
 	}
 }
+
+func TestLaneSourceStatusAndLegacyCompatibility(t *testing.T) {
+	at := time.Now().UTC()
+	for _, status := range []string{"ok", "timeout", "unavailable", "error"} {
+		msg := testutil.Telemetry("car-001", at, 1)
+		msg.Lane.Source, msg.Lane.Status = "hardware", status
+		decoded, err := protocol.ParseTelemetry("car/car-001/telemetry", testutil.JSON(msg))
+		if err != nil {
+			t.Fatal(err)
+		}
+		view := protocol.View("car-001", true, decoded, at)
+		if view.Samples["lane"].Source != "hardware" || view.Samples["lane"].Status != status {
+			t.Fatalf("lost camera metadata: %+v", view.Samples["lane"])
+		}
+		if status != "ok" && (view.Lane.Valid || view.Lane.OffsetRatio != nil) {
+			t.Fatal("failed camera still has a valid lane")
+		}
+	}
+	for _, source := range []string{"", "camera"} {
+		msg := testutil.Telemetry("car-001", at, 1)
+		msg.Lane.Source, msg.Lane.Status = source, "ok"
+		if _, err := protocol.ParseTelemetry("car/car-001/telemetry", testutil.JSON(msg)); err == nil {
+			t.Fatal("invalid camera source accepted")
+		}
+	}
+	legacy := testutil.Telemetry("car-001", at, 1)
+	if _, err := protocol.ParseTelemetry("car/car-001/telemetry", testutil.JSON(legacy)); err != nil {
+		t.Fatalf("legacy telemetry rejected: %v", err)
+	}
+}

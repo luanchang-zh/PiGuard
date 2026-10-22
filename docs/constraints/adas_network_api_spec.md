@@ -354,6 +354,8 @@ Raspberry Pi -> Platform
 
 # 7. Telemetry 字段定义
 
+2026-10-22 兼容扩展：`lane` 可增加 `source` 和 `status`，枚举分别与其他采样对象一致，用于区分电脑/真实摄像头、合成图像以及采集故障。新增边缘端同时发送这两个字段；后端继续接受二者都缺省的旧报文，并将元数据传入 `state.samples.lane` 与 WebSocket 状态视图。`valid` 仍独立表示车道检测是否有效：摄像头采集正常但画面无标线时为 `status=ok, valid=false`。
+
 ## speed.source
 
 可选：

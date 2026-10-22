@@ -16,7 +16,7 @@ class ManualTest:
     until_ns: int
 
 
-class MockActuator:
+class ActuatorState:
     def __init__(self) -> None:
         self.risk_level = "unknown"
         self.indicator = "off"
@@ -67,3 +67,7 @@ class MockActuator:
             self.indicator, self.buzzer = "green", "off"
             return
         self.indicator, self.buzzer = "off", "off"
+
+
+class MockActuator(ActuatorState):
+    """The shared arbitration state without a physical output."""

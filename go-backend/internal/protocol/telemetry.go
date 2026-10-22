@@ -44,6 +44,8 @@ type Lane struct {
 	Direction   string     `json:"direction"`
 	Confidence  *float64   `json:"confidence"`
 	SampleAt    *time.Time `json:"sample_at"`
+	Source      string     `json:"source,omitempty"`
+	Status      string     `json:"status,omitempty"`
 }
 
 type Risk struct {
@@ -123,6 +125,7 @@ func ParseTelemetry(topic string, payload []byte) (*Telemetry, error) {
 		!validSample(t.Temperature.Status, t.Temperature.Source, t.Temperature.Unit, "C", t.Temperature.SampleAt) ||
 		!validSample(t.Gyro.Status, t.Gyro.Source, t.Gyro.Unit, "deg/s", t.Gyro.SampleAt) ||
 		!oneOf(t.Lane.Direction, "left", "center", "right", "unknown") ||
+		(t.Lane.Source != "" || t.Lane.Status != "") && !validSample(t.Lane.Status, t.Lane.Source, "", "", t.Lane.SampleAt) ||
 		!oneOf(t.Risk.Level, "normal", "warning", "danger", "unknown") ||
 		(t.Lane.SampleAt != nil && t.Lane.SampleAt.IsZero()) ||
 		(t.Lane.Confidence != nil && (*t.Lane.Confidence < 0 || *t.Lane.Confidence > 1)) ||
@@ -228,7 +231,7 @@ func View(deviceID string, online bool, t *Telemetry, now time.Time) State {
 	s.Temperature = usable(t.Temperature.Value, t.Temperature.Status, t.Temperature.SampleAt)
 	s.YawRate = usable(t.Gyro.YawRate, t.Gyro.Status, t.Gyro.SampleAt)
 	s.Lane = t.Lane
-	if !s.Lane.Valid || s.Lane.SampleAt == nil || s.Lane.OffsetRatio == nil {
+	if !s.Lane.Valid || s.Lane.SampleAt == nil || s.Lane.OffsetRatio == nil || (s.Lane.Status != "" && s.Lane.Status != "ok") {
 		s.Lane.Valid = false
 		s.Lane.OffsetRatio = nil
 	}
@@ -237,11 +240,11 @@ func View(deviceID string, online bool, t *Telemetry, now time.Time) State {
 	s.Samples["distance"] = SampleInfo{t.Distance.SampleAt, t.Distance.Source, t.Distance.Status}
 	s.Samples["temperature"] = SampleInfo{t.Temperature.SampleAt, t.Temperature.Source, t.Temperature.Status}
 	s.Samples["gyro"] = SampleInfo{t.Gyro.SampleAt, t.Gyro.Source, t.Gyro.Status}
-	s.Samples["lane"] = SampleInfo{SampleAt: t.Lane.SampleAt}
+	s.Samples["lane"] = SampleInfo{t.Lane.SampleAt, t.Lane.Source, t.Lane.Status}
 	s.Freshness["speed"] = freshness(t.Speed.SampleAt, t.Speed.Status, s.Speed != nil, time.Second, now)
 	s.Freshness["distance"] = freshness(t.Distance.SampleAt, t.Distance.Status, s.Distance != nil, time.Second, now)
 	s.Freshness["temperature"] = freshness(t.Temperature.SampleAt, t.Temperature.Status, s.Temperature != nil, 5*time.Second, now)
 	s.Freshness["gyro"] = freshness(t.Gyro.SampleAt, t.Gyro.Status, s.YawRate != nil, time.Second, now)
-	s.Freshness["lane"] = freshness(t.Lane.SampleAt, "", s.Lane.Valid, time.Second, now)
+	s.Freshness["lane"] = freshness(t.Lane.SampleAt, t.Lane.Status, s.Lane.Valid, time.Second, now)
 	return s
 }

@@ -90,8 +90,8 @@ export const EVENT_DATA_FIELDS: Record<string, { label: string; unit?: string; d
 // ---------- 传感器 ----------
 export const SENSORS: { key: string; label: string; model: string; icon: IconName }[] = [
   { key: 'distance', label: '超声波测距', model: 'HC-SR04', icon: 'radar' },
-  { key: 'lane', label: '摄像头车道', model: 'OV5647', icon: 'camera' },
-  { key: 'gyro', label: '陀螺仪', model: 'MPU6050', icon: 'compass' },
+  { key: 'lane', label: '摄像头车道', model: '实时摄像头', icon: 'camera' },
+  { key: 'gyro', label: '陀螺仪', model: 'MPU6050/6500', icon: 'compass' },
   { key: 'temperature', label: '温湿度', model: 'AHT20', icon: 'thermometer' },
   { key: 'speed', label: '车速', model: '场景/估算', icon: 'gauge' },
 ]

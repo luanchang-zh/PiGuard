@@ -1,8 +1,4 @@
-"""Check encoded payloads with the Go parser from the backend branch.
-
-The edge branch does not contain go-backend. The test reads that parser from
-git and does not copy it into this tree.
-"""
+"""Check encoded payloads against both the historical and current Go parsers."""
 
 import json
 import shutil
@@ -35,7 +31,8 @@ var frameIdentity = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 '''
 
 
-def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_config) -> None:
+@pytest.mark.parametrize('parser_source', ['baseline', 'working-tree'])
+def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_config, parser_source) -> None:
     go = shutil.which("go")
     if go is None:
         pytest.skip("go is not installed")
@@ -47,6 +44,8 @@ def test_go_parser_accepts_encoder_output_and_rejects_bad_payloads(example_confi
             capture_output=True,
         ).stdout
         for ref in PARSERS
+    } if parser_source == 'baseline' else {
+        Path(ref).name: (REPO / ref.split(':', 1)[1]).read_bytes() for ref in PARSERS
     }
     clock = FakeClock()
     normal = build_telemetry(

@@ -240,7 +240,7 @@ function setIndicatorPreset(ms: number) {
 
       <!-- 3. 摄像头抓拍执行器 -->
       <PgCard
-        title="OV5647 摄像头抓拍"
+        title="摄像头抓拍"
         subtitle="即时触发单帧证据捕获与 HTTP 上传"
         icon="camera"
         accent="var(--pg-c-lane)"

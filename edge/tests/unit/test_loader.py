@@ -1,4 +1,3 @@
-import inspect
 from pathlib import Path
 
 import pytest
@@ -37,7 +36,6 @@ def test_mock_drivers_do_not_receive_hardware(example_config) -> None:
         speed_driver=example_config.speed.driver,
     )
 
-    assert "hardware" not in inspect.signature(build_sources).parameters
     for sensor in (sources.distance, sources.camera, sources.gyro, sources.temperature, sources.speed):
         fields = vars(sensor)
         assert "trigger_bcm" not in fields
@@ -82,8 +80,8 @@ def test_local_yaml_overrides_scenario_only(example_config, tmp_path: Path) -> N
     assert loaded.storage.sqlite_path == (tmp_path / "../data/edge.db").resolve()
 
 
-def test_non_mock_mode_is_not_built(example_config, tmp_path: Path) -> None:
-    text = example_config.source_path.read_text(encoding="utf-8").replace("mode: mock", "mode: hardware", 1)
+def test_replay_mode_is_not_built(example_config, tmp_path: Path) -> None:
+    text = example_config.source_path.read_text(encoding="utf-8").replace("mode: mock", "mode: replay", 1)
     path = tmp_path / "hardware-mode.yaml"
     path.write_text(text, encoding="utf-8")
     loaded = load_config(path)

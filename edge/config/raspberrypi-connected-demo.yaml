@@ -1,0 +1,129 @@
+# 真实 HC-SR04、MPU6500、AHT20、蜂鸣器（物理 Pin11 / BCM17）。
+# 电脑摄像头经 USB 以太网提供 JPEG；速度仍为明确标记的场景模拟值。
+device:
+  id: car-001
+  mode: hardware
+  config_version: 0
+
+mqtt:
+  host: 10.12.194.2
+  port: 1883
+  client_id: piguard-edge-car-001
+  keepalive_s: 30
+  telemetry_qos: 0
+  event_qos: 1
+  status_qos: 1
+  command_qos: 1
+  ack_qos: 1
+  status_heartbeat_s: 10
+  username: car-001
+  password: piguard-device-mqtt-demo
+
+http:
+  base_url: http://10.12.194.2:8080/api/v1
+  timeout_s: 3
+  # 与 go-backend/.env.demo 中的设备 HTTP 身份一致。
+  username: car-001
+  password: piguard-device-http-demo
+
+sensors:
+  distance:
+    driver: hcsr04
+    sample_hz: 10
+  gyro:
+    driver: mpu
+    sample_hz: 50
+  temperature:
+    driver: aht20
+    sample_hz: 1
+  camera:
+    driver: network
+    capture_fps: 10
+    process_fps: 5
+    width: 640
+    height: 480
+    video_path: ""
+    stream_url: http://10.12.194.2:8090/frame.jpg
+    stream_token: piguard-camera-demo
+    stream_timeout_s: 0.7
+
+speed:
+  driver: scenario
+  sample_hz: 10
+
+simulation:
+  scenario: normal_drive
+  playback_speed: 1.0
+
+mapping:
+  # 桌面 HC-SR04 演示用 100。传感器直接测量车距时改为 1。处理层只乘这一次。
+  distance_scale: 100
+
+runtime:
+  rule_hz: 10
+  telemetry_hz: 2
+  ttl_ms:
+    speed: 1000
+    distance: 1000
+    gyro: 1000
+    lane: 1000
+    temperature: 5000
+
+rules:
+  obstacle:
+    warning_distance_m: 15
+    danger_distance_m: 8
+    headway_enabled: true
+    warning_headway_s: 1.5
+    danger_headway_s: 0.8
+  lane_departure:
+    offset_threshold: 0.35
+    duration_ms: 1000
+  sharp_turn:
+    yaw_threshold_deg_s: 30
+    min_speed_kmh: 20
+    duration_ms: 300
+  temperature:
+    trigger_c: 35
+    recover_c: 33
+    duration_ms: 5000
+    recover_duration_ms: 5000
+
+actuators:
+  driver: gpio
+  buzzer_bcm: 17
+  gpio_chip: 0
+  buzzer_frequency_hz: 500
+  buzzer_active_high: true
+
+storage:
+  sqlite_path: ../data/edge-demo.db
+  event_confirmation: http_query
+  # 只回收已由平台查询确认的事件；未确认事件不按这个时间自动删除。
+  confirmed_event_retention_days: 7
+
+features:
+  # 演示配置启用软件图片上传和远程规则配置。
+  remote_config: true
+  frame_upload: true
+
+# 地址使用十进制：MPU6500 0x68=104，AHT20 0x38=56，BMP280 0x77=119。
+# BMP280 地址仅保留接线记录，当前遥测使用 AHT20 的温度。
+hardware:
+  i2c_bus: 1
+  distance:
+    trigger_bcm: 23
+    echo_bcm: 24
+    max_distance_m: 4.0
+    pulse_timeout_ms: 30
+  gyro:
+    address: 104
+    yaw_axis: z
+    yaw_sign: 1
+    full_scale_dps: 500
+  temperature:
+    aht20_address: 56
+    bmp280_address: 119
+  camera:
+    width: 640
+    height: 480

@@ -27,7 +27,9 @@ class PlatformHttp:
         if config.http.username:
             token = base64.b64encode(f"{config.http.username}:{config.http.password}".encode()).decode()
             self._headers["Authorization"] = "Basic " + token
-        self._opener = urllib.request.build_opener(_NoRedirect())
+        # The platform is a directly attached LAN/USB peer. Environment proxies
+        # must not reroute device credentials or introduce local-link timeouts.
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def _request(self, path: str, data: bytes, content_type: str, timeout: float):
         request = urllib.request.Request(self._base + path, data=data, headers={**self._headers, "Content-Type": content_type}, method="POST")

@@ -187,7 +187,8 @@ def _sensors(value: Any) -> SensorsConfig:
 def _camera(value: Any) -> CameraConfig:
     path = "sensors.camera"
     required = {"driver", "capture_fps", "process_fps", "width", "height", "video_path"}
-    optional = {"remote_url", "remote_token_env", "remote_timeout_s", "remote_max_age_ms"}
+    optional = {"remote_url", "remote_token_env", "remote_timeout_s", "remote_max_age_ms",
+                "stream_url", "stream_token", "stream_timeout_s"}
     if not isinstance(value, dict):
         raise ConfigError(f"{path} must be a mapping")
     _unknown(value, required | optional, path)
@@ -199,6 +200,9 @@ def _camera(value: Any) -> CameraConfig:
         width=_int(value["width"], f"{path}.width", minimum=1, maximum=1920),
         height=_int(value["height"], f"{path}.height", minimum=1, maximum=1080),
         video_path=_optional_text(value["video_path"], f"{path}.video_path"),
+        stream_url=_optional_text(value.get("stream_url", ""), f"{path}.stream_url"),
+        stream_token=_optional_text(value.get("stream_token", ""), f"{path}.stream_token"),
+        stream_timeout_s=_number(value.get("stream_timeout_s", .7), f"{path}.stream_timeout_s", minimum=0, inclusive=False, maximum=5),
         remote_url=_optional_text(value.get("remote_url", ""), f"{path}.remote_url"),
         remote_token_env=_text(value.get("remote_token_env", "PIGUARD_CAMERA_TOKEN"), f"{path}.remote_token_env"),
         remote_timeout_s=_number(value.get("remote_timeout_s", 0.5), f"{path}.remote_timeout_s", minimum=0, inclusive=False),
@@ -314,8 +318,21 @@ def _rules(value: Any) -> RulesConfig:
 
 
 def _actuators(value: Any) -> ActuatorsConfig:
-    data = _section(value, {"driver"}, "actuators")
-    return ActuatorsConfig(driver=_text(data["driver"], "actuators.driver"))
+    if not isinstance(value, dict):
+        raise ConfigError("actuators must be a mapping")
+    _unknown(value, {"driver", "buzzer_bcm", "gpio_chip", "buzzer_frequency_hz", "buzzer_active_high"}, "actuators")
+    _require(value, {"driver"}, "actuators")
+    driver = _choice(value["driver"], "actuators.driver", {"mock", "gpio"})
+    bcm = value.get("buzzer_bcm")
+    if driver == "gpio" and bcm is None:
+        raise ConfigError("actuators.buzzer_bcm is required for driver=gpio")
+    return ActuatorsConfig(
+        driver=driver,
+        buzzer_bcm=None if bcm is None else _int(bcm, "actuators.buzzer_bcm", minimum=0, maximum=27),
+        gpio_chip=_int(value.get("gpio_chip", 0), "actuators.gpio_chip", minimum=0),
+        buzzer_frequency_hz=_int(value.get("buzzer_frequency_hz", 500), "actuators.buzzer_frequency_hz", minimum=100, maximum=2000),
+        buzzer_active_high=_bool(value.get("buzzer_active_high", True), "actuators.buzzer_active_high"),
+    )
 
 
 def _storage(value: Any, config_dir: Path) -> StorageConfig:
@@ -367,11 +384,16 @@ def _hardware(value: Any) -> HardwareConfig:
     yaw_sign = _int(gyro["yaw_sign"], "hardware.gyro.yaw_sign")
     if yaw_sign not in (-1, 1):
         raise ConfigError("hardware.gyro.yaw_sign must be -1 or 1")
+    full_scale = _int(gyro["full_scale_dps"], "hardware.gyro.full_scale_dps")
+    if full_scale not in (250, 500, 1000, 2000):
+        raise ConfigError("hardware.gyro.full_scale_dps must be 250, 500, 1000 or 2000")
+    if distance["trigger_bcm"] == distance["echo_bcm"]:
+        raise ConfigError("hardware.distance trigger and echo must use different GPIOs")
     return HardwareConfig(
         i2c_bus=_int(data["i2c_bus"], "hardware.i2c_bus", minimum=0),
         distance=DistanceHardware(
-            trigger_bcm=_int(distance["trigger_bcm"], "hardware.distance.trigger_bcm"),
-            echo_bcm=_int(distance["echo_bcm"], "hardware.distance.echo_bcm"),
+            trigger_bcm=_int(distance["trigger_bcm"], "hardware.distance.trigger_bcm", minimum=0, maximum=27),
+            echo_bcm=_int(distance["echo_bcm"], "hardware.distance.echo_bcm", minimum=0, maximum=27),
             max_distance_m=_number(
                 distance["max_distance_m"],
                 "hardware.distance.max_distance_m",
@@ -384,7 +406,7 @@ def _hardware(value: Any) -> HardwareConfig:
             address=_int(gyro["address"], "hardware.gyro.address", minimum=0, maximum=127),
             yaw_axis=_choice(gyro["yaw_axis"], "hardware.gyro.yaw_axis", _YAW_AXES),
             yaw_sign=yaw_sign,
-            full_scale_dps=_int(gyro["full_scale_dps"], "hardware.gyro.full_scale_dps", minimum=1),
+            full_scale_dps=full_scale,
         ),
         temperature=TemperatureHardware(
             aht20_address=_int(temperature["aht20_address"], "hardware.temperature.aht20_address", minimum=0, maximum=127),
@@ -464,10 +486,15 @@ def _number(
     path: str,
     minimum: float | None = None,
     inclusive: bool = True,
+    maximum: float | None = None,
 ) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(f"{path} must be a number")
     number = float(value)
+    if not math.isfinite(number):
+        raise ConfigError(f"{path} must be finite")
+    if maximum is not None and number > maximum:
+        raise ConfigError(f"{path} must be <= {maximum}")
     if minimum is not None and (number < minimum or (not inclusive and number == minimum)):
         raise ConfigError(f"{path} must be greater than {minimum}")
     return number

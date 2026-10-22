@@ -6,6 +6,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import timedelta
 
@@ -98,20 +99,19 @@ class EdgeApp:
         message_ids: Callable[[], str] | None = None,
     ) -> "EdgeApp":
         engine = ScenarioEngine(config.simulation.scenario, config.simulation.playback_speed)
-        sampler = Sampler.from_config(config, engine, clock)
-        return cls(
-            config,
-            clock,
-            transport,
-            sampler,
-            message_ids,
-            RuleEngine.from_config(config),
-            EventStore(config.storage.sqlite_path),
-            ActuatorManager.from_config(config),
-            engine,
-            CommandStore(config.storage.sqlite_path),
-            HttpWorker(PlatformHttp(config)) if config.features.frame_upload or config.http.username else None,
-        )
+        with ExitStack() as cleanup:
+            def own(resource):
+                cleanup.callback(resource.close)
+                return resource
+            sampler = own(Sampler.from_config(config, engine, clock))
+            store = own(EventStore(config.storage.sqlite_path))
+            actuators = own(ActuatorManager.from_config(config))
+            commands = own(CommandStore(config.storage.sqlite_path))
+            http = own(HttpWorker(PlatformHttp(config))) if config.features.frame_upload or config.http.username else None
+            app = cls(config, clock, transport, sampler, message_ids, RuleEngine.from_config(config),
+                      store, actuators, engine, commands, http)
+            cleanup.pop_all()
+            return app
 
     def start(self) -> None:
         if self._configs is not None:
@@ -195,24 +195,28 @@ class EdgeApp:
                 except (ValueError, RuntimeError):
                     self.network_error = "MQTT shutdown confirmation unavailable"
         finally:
-            try:
-                self._transport.disconnect()
-            except OSError:
-                self.network_error = "MQTT disconnect unavailable"
-            if self._http is not None:
-                self._http.close()
-            if self._configs is not None:
-                self._configs.close()
-                self._configs = None
-            self._sampler.close()
-            self._store.close()
-            self._commands.close()
+            with ExitStack() as cleanup:
+                cleanup.callback(self._commands.close)
+                cleanup.callback(self._store.close)
+                cleanup.callback(self._sampler.close)
+                if self._configs is not None:
+                    cleanup.callback(self._configs.close)
+                    self._configs = None
+                if self._http is not None:
+                    cleanup.callback(self._http.close)
+                def disconnect():
+                    try:
+                        self._transport.disconnect()
+                    except OSError:
+                        self.network_error = "MQTT disconnect unavailable"
+                cleanup.callback(disconnect)
+                cleanup.callback(self._actuators.close)
 
     def run(self, sleep: Callable[[float], None] | None = None, stop: threading.Event | None = None) -> None:
         pause = sleep or time.sleep
         done = stop or threading.Event()
-        self.start()
         try:
+            self.start()
             while not done.is_set():
                 self.step()
                 pause(0.01)

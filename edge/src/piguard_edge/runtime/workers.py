@@ -49,8 +49,8 @@ class Sampler:
 
     @classmethod
     def from_config(cls, config: EdgeConfig, engine: ScenarioEngine, clock: Clock) -> "Sampler":
-        if config.device.mode != "mock":
-            raise ValueError("sampler only runs mode=mock")
+        if config.device.mode not in ("mock", "hardware"):
+            raise ValueError("sampler supports mock or hardware mode")
         sources = build_sources(
             engine,
             distance_scale=config.mapping.distance_scale,
@@ -64,6 +64,15 @@ class Sampler:
             height=config.sensors.camera.height,
             process_fps=config.sensors.camera.process_fps,
             camera_config=config.sensors.camera,
+            capture_fps=config.sensors.camera.capture_fps,
+            hardware=config.hardware,
+            gpio_chip=config.actuators.gpio_chip,
+            distance_hz=config.sensors.distance.sample_hz,
+            temperature_hz=config.sensors.temperature.sample_hz,
+            gyro_hz=config.sensors.gyro.sample_hz,
+            stream_url=config.sensors.camera.stream_url,
+            stream_token=config.sensors.camera.stream_token,
+            stream_timeout_s=config.sensors.camera.stream_timeout_s,
         )
         return cls(
             sources,
@@ -86,9 +95,17 @@ class Sampler:
                 self._next_ns[name] = now + period
 
     def close(self) -> None:
-        release = getattr(self.sources.camera, "release", None)
-        if release is not None:
-            release()
+        first_error = None
+        for source in (self.sources.camera, self.sources.distance, self.sources.gyro,
+                       self.sources.temperature, self.sources.speed):
+            close = getattr(source, "close", None) or getattr(source, "release", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception as exc:
+                    first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
 
     def _sample(self, name: str) -> None:
         try:
@@ -144,13 +161,14 @@ class Sampler:
         self.state.frame = frame
 
     def _store_error(self, name: str) -> None:
+        source = getattr(getattr(self.sources, name), "source", SOURCE_MOCK)
         sample_at = self._clock.utc()
         monotonic_ns = self._clock.monotonic_ns()
         if name == "camera":
             self.state.frame = Frame(
                 sample_at,
                 monotonic_ns,
-                SOURCE_MOCK,
+                source,
                 SampleStatus.ERROR,
                 None,
                 invalid_lane(sample_at),
@@ -166,7 +184,7 @@ class Sampler:
             None,
             sample_at,
             monotonic_ns,
-            SOURCE_MOCK,
+            source,
             SampleStatus.ERROR,
             units[name],
         )

@@ -264,7 +264,7 @@ const sensorRows = computed(() => {
     const freshness = (!live.value && rawFreshness === 'fresh') ? 'stale' : rawFreshness
 
     let status = sample?.status ?? 'unavailable'
-    if (def.key === 'lane' && s?.lane) {
+    if (def.key === 'lane' && s?.lane && (!sample?.status || sample.status === 'ok')) {
       status = s.lane.valid ? 'ok' : 'unavailable'
     }
 
@@ -278,7 +278,7 @@ const sensorRows = computed(() => {
       freshness,
       freshnessMeta: FRESHNESS_META[freshness] || FRESHNESS_META.missing,
       sampleAt: sample?.sample_at || s?.timestamp,
-      source: sample?.source || 'mock',
+      source: sample?.source || 'unknown',
     }
   })
 })
@@ -625,7 +625,7 @@ watch(
       <!-- 车道偏离 3D 轨迹透视面板 -->
       <PgCard
         title="车道保持与偏离预警 (LDW)"
-        subtitle="基于 OV5647 摄像头视觉边缘车道线解算"
+        subtitle="基于摄像头图像的边缘车道线检测"
         icon="road"
         accent="var(--pg-c-lane)"
       >
@@ -703,7 +703,7 @@ watch(
       <!-- 摄像头实时画面 / 抓拍预览 -->
       <PgCard
         title="车载摄像头视觉画面"
-        subtitle="OV5647 传感器捕获流与快照证据"
+        subtitle="摄像头实时采集与快照证据"
         icon="camera"
         accent="var(--pg-primary)"
       >

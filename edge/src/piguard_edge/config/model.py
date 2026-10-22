@@ -53,6 +53,9 @@ class CameraConfig:
     remote_token_env: str = "PIGUARD_CAMERA_TOKEN"
     remote_timeout_s: float = 0.5
     remote_max_age_ms: int = 1000
+    stream_url: str = ""
+    stream_token: str = ""
+    stream_timeout_s: float = .7
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +134,10 @@ class RulesConfig:
 @dataclass(frozen=True, slots=True)
 class ActuatorsConfig:
     driver: str
+    buzzer_bcm: int | None = None
+    gpio_chip: int = 0
+    buzzer_frequency_hz: int = 500
+    buzzer_active_high: bool = True
 
 
 @dataclass(frozen=True, slots=True)

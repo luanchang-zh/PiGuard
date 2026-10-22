@@ -54,6 +54,8 @@ export interface LaneState {
   direction: 'left' | 'center' | 'right' | 'unknown'
   confidence?: number
   sample_at?: string
+  source?: string
+  status?: SensorStatus
 }
 
 export type RiskLevel = 'normal' | 'warning' | 'danger' | 'unknown'

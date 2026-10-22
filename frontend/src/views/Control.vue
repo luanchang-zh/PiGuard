@@ -13,7 +13,6 @@ import {
 } from '@/utils/format'
 import {
   SCENARIOS,
-  INDICATOR_COLORS,
   COMMAND_META,
   COMMAND_STATUS_META,
 } from '@/utils/meta'
@@ -30,18 +29,12 @@ const buzzer = reactive({
   duration_ms: 600,
 })
 
-// 2. LED 指示灯参数
-const indicator = reactive({
-  duration_ms: 800,
-  color: 'yellow' as 'green' | 'yellow' | 'red',
-})
-
-// 3. 摄像头拍照参数
+// 2. 摄像头拍照参数
 const snapshot = reactive({
   quality: 85,
 })
 
-// 4. 场景参数
+// 3. 场景参数
 const selectedScenario = ref('obstacle_approach')
 const scenarioSpeed = ref<number>(1)
 
@@ -101,15 +94,11 @@ async function pollStatus(id: string) {
 function setBuzzerPreset(ms: number) {
   buzzer.duration_ms = ms
 }
-
-function setIndicatorPreset(ms: number) {
-  indicator.duration_ms = ms
-}
 </script>
 
 <template>
   <div class="pg-page pg-control-page pg-stagger">
-    <!-- 顶部：三大座舱执行器控制台 -->
+    <!-- 顶部：蜂鸣器与摄像头控制台 -->
     <div class="pg-actuators-grid">
       <!-- 1. 蜂鸣器执行器 -->
       <PgCard
@@ -165,80 +154,7 @@ function setIndicatorPreset(ms: number) {
         </div>
       </PgCard>
 
-      <!-- 2. LED 指示灯执行器 -->
-      <PgCard
-        title="三色 LED 指示灯"
-        subtitle="车载仪表盘红黄绿三态预警灯"
-        icon="bulb"
-        accent="var(--pg-primary)"
-        class="pg-actuator-card"
-      >
-        <div class="pg-actuator-content">
-          <!-- LED 发光物理模拟效果 -->
-          <div class="pg-led-preview-box">
-            <div
-              class="pg-led-light"
-              :class="`led--${indicator.color}`"
-            />
-            <span class="pg-led-label">
-              {{ INDICATOR_COLORS.find((c) => c.value === indicator.color)?.label }}光 ·
-              {{ indicator.duration_ms }} ms
-            </span>
-          </div>
-
-          <div class="pg-control-row">
-            <span class="pg-control-label">指示颜色:</span>
-            <div class="pg-color-selector">
-              <button
-                v-for="c in INDICATOR_COLORS"
-                :key="c.value"
-                class="pg-color-dot-btn"
-                :class="{ active: indicator.color === c.value }"
-                :style="{ '--c': c.hex }"
-                @click="indicator.color = c.value as any"
-              >
-                <span class="dot" />
-                <span class="text">{{ c.label }}</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="pg-control-row">
-            <span class="pg-control-label">点亮时长:</span>
-            <el-slider
-              v-model="indicator.duration_ms"
-              :min="100"
-              :max="3000"
-              :step="50"
-              class="pg-flex-1"
-            />
-          </div>
-
-          <div class="pg-preset-pills">
-            <button
-              v-for="ms in [300, 800, 1500, 3000]"
-              :key="ms"
-              class="pg-preset-btn"
-              :class="{ active: indicator.duration_ms === ms }"
-              @click="setIndicatorPreset(ms)"
-            >
-              {{ ms }}ms
-            </button>
-          </div>
-
-          <el-button
-            type="primary"
-            class="pg-act-btn"
-            :loading="submitting"
-            @click="send('indicator.test', { ...indicator })"
-          >
-            <PgIcon name="bulb" :size="16" />
-            <span>点亮指示灯</span>
-          </el-button>
-        </div>
-      </PgCard>
-
-      <!-- 3. 摄像头抓拍执行器 -->
+      <!-- 2. 摄像头抓拍执行器 -->
       <PgCard
         title="摄像头抓拍"
         subtitle="即时触发单帧证据捕获与 HTTP 上传"
@@ -458,10 +374,10 @@ function setIndicatorPreset(ms: number) {
   gap: var(--pg-gap);
 }
 
-/* 执行器卡片三列网格 */
+/* 蜂鸣器与摄像头双列网格 */
 .pg-actuators-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--pg-gap);
 }
 
@@ -562,79 +478,6 @@ function setIndicatorPreset(ms: number) {
   bottom: 6px;
   font-size: 11px;
   color: var(--pg-text-faint);
-}
-
-/* LED 发光模拟 */
-.pg-led-preview-box {
-  height: 60px;
-  background: rgba(10, 16, 28, 0.5);
-  border-radius: var(--pg-radius-sm);
-  border: 1px solid var(--pg-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  position: relative;
-}
-
-.pg-led-light {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  transition: all 0.3s var(--pg-ease);
-}
-
-.led--green {
-  background: #34d399;
-  box-shadow: 0 0 20px #34d399;
-}
-
-.led--yellow {
-  background: #fbbf24;
-  box-shadow: 0 0 20px #fbbf24;
-}
-
-.led--red {
-  background: #fb5174;
-  box-shadow: 0 0 20px #fb5174;
-}
-
-.pg-led-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--pg-text-2);
-}
-
-.pg-color-selector {
-  display: flex;
-  gap: 8px;
-}
-
-.pg-color-dot-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--pg-radius-xs);
-  background: var(--pg-surface-2);
-  border: 1px solid var(--pg-border);
-  color: var(--pg-text-muted);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-
-.pg-color-dot-btn .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--c);
-}
-
-.pg-color-dot-btn.active {
-  border-color: var(--c);
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
 }
 
 /* 摄像头快照展示 */

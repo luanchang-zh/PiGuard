@@ -125,7 +125,6 @@ export interface EventList {
 // ---------- 命令 ----------
 export type CommandType =
   | 'buzzer.test'
-  | 'indicator.test'
   | 'camera.snapshot'
   | 'scenario.start'
   | 'scenario.stop'

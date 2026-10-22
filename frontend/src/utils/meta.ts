@@ -132,7 +132,6 @@ export const DIRECTION_LABEL: Record<string, string> = {
 // ---------- 命令 ----------
 export const COMMAND_META: Record<CommandType, { label: string; icon: IconName }> = {
   'buzzer.test': { label: '蜂鸣器测试', icon: 'volume' },
-  'indicator.test': { label: '指示灯测试', icon: 'bulb' },
   'camera.snapshot': { label: '远程拍照', icon: 'camera' },
   'scenario.start': { label: '启动场景', icon: 'play' },
   'scenario.stop': { label: '停止场景', icon: 'stop' },
@@ -159,14 +158,4 @@ export const SCENARIOS: { value: string; label: string; desc: string; icon: Icon
 
 export const SCENARIO_LABEL: Record<string, string> = Object.fromEntries(
   SCENARIOS.map((s) => [s.value, s.label]),
-)
-
-export const INDICATOR_COLORS = [
-  { value: 'green', label: '绿色', hex: '#34d399' },
-  { value: 'yellow', label: '黄色', hex: '#fbbf24' },
-  { value: 'red', label: '红色', hex: '#fb5174' },
-] as const
-
-export const INDICATOR_LABEL: Record<string, string> = Object.fromEntries(
-  INDICATOR_COLORS.map((c) => [c.value, c.label]),
 )

@@ -95,3 +95,31 @@ def _clock():
     from piguard_edge.runtime.clock import FakeClock
 
     return FakeClock()
+
+
+def test_cloud_mqtt_websocket_config_and_legacy_defaults(example_config, tmp_path):
+    assert example_config.mqtt.transport == "tcp"
+    assert example_config.mqtt.websocket_path == "/mqtt"
+    data = yaml.safe_load(example_config.source_path.read_text())
+    data["mqtt"].update(transport="websockets", websocket_path="/mqtt", port=80)
+    path = tmp_path / "cloud.yaml"
+    path.write_text(yaml.safe_dump(data))
+    config = load_config(path)
+    assert config.mqtt.transport == "websockets"
+    assert config.mqtt.port == 80
+    from piguard_edge.transport.mqtt import PahoMqtt
+    session = PahoMqtt(config)
+    assert session._client.transport == "websockets"
+
+
+@pytest.mark.parametrize("key,value", [
+    ("transport", "http"), ("websocket_path", "mqtt"),
+    ("websocket_path", "/mqtt\r\nInjected: yes"), ("websocket_path", "/mqtt?token=secret"),
+])
+def test_invalid_cloud_mqtt_settings_are_rejected(example_config, tmp_path, key, value):
+    data = yaml.safe_load(example_config.source_path.read_text())
+    data["mqtt"][key] = value
+    path = tmp_path / "bad-cloud.yaml"
+    path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ConfigError, match="mqtt"):
+        load_config(path)

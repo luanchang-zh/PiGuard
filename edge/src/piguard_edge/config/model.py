@@ -25,6 +25,8 @@ class MqttConfig:
     status_heartbeat_s: int
     username: str
     password: str
+    transport: str = "tcp"
+    websocket_path: str = "/mqtt"
 
 
 @dataclass(frozen=True, slots=True)

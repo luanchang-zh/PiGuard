@@ -1,5 +1,17 @@
 # 树莓派边缘端接续状态
 
+## 2026-10-27 前后端迁移腾讯云
+
+前端和 Go 后端已部署到 `ubuntu@106.54.188.216`（Ubuntu 22.04），网页入口为 `http://106.54.188.216/`。Nginx 按 IP 单独分流，后端监听 `127.0.0.1:18080`；专用 Mosquitto 的 TCP / WebSocket 监听为 `127.0.0.1:1883` / `127.0.0.1:1884`，设备通过公网 `ws://106.54.188.216/mqtt` 接入。直接公网 1883 的验证请求未到达服务器，因此使用已连通的 80 端口。原有域名站点和 Docker 服务保留。
+
+服务为 `piguard-backend.service`、`piguard-mqtt.service`，均开启自启和失败重启。数据库与图片在 `/var/lib/piguard/`，Broker 数据在 `/var/lib/piguard-mqtt/`，私密环境变量在 `/etc/piguard/backend.env`。可重复部署入口为 `deploy/cloud/deploy.sh`，公网检查为 `deploy/cloud/verify.py`。
+
+平台、设备 HTTP、设备 MQTT 等身份均生成独立随机密码，保存在被 Git 忽略的 `deploy/cloud/.secrets/`。登录信息为该目录中的 `access.txt`；已生成的树莓派配置为被忽略的 `edge/config/cloud/raspberrypi.yaml`，使用 `edge/scripts/run-cloud.sh` 启动。摄像头仍连接 USB 局域网 `10.12.194.2:8090`。本次用户明确树莓派未连接；云端部署和软件验证独立完成，真实设备等待以后接入。旧局域网演示配置保持原用途。
+
+当前前端构建、Go test/vet、Python 178 项单元测试，以及公网登录/Cookie/CSRF/Origin/WebSocket/MQTT WebSocket 检查通过。具体访问和维护步骤见 [云服务器部署](docs/deployment/cloud-server.md)。
+
+临时软件设备进一步通过云端遥测、默认配置确认、拍照上传与 Ack、模拟蜂鸣器 Ack、WS 业务推送、正常离线及后端重启持久化检查。软件设备已停止，验证产生的数据与图片归档在 `/var/backups/piguard/smoke-results-*/`，线上恢复验证前的干净初始数据库。
+
 ## 2026-10-22 真实输入与 USB 链路开发
 
 最新代码已接入 HC-SR04（BCM23/24）、MPU 系列陀螺仪（当前识别为 MPU6500，0x68）、AHT20（0x38）、物理 Pin11 / BCM17 蜂鸣器，以及电脑摄像头 HTTP JPEG 输入。选择 `edge/config/raspberrypi-connected-demo.yaml`，设备模式为 hardware；速度保留场景模拟并标记 mock，距离保留桌面 ×100 映射。湿度在 AHT20 驱动中解码，当前页面/遥测仍按课设 v1 使用温度。LED 未接。

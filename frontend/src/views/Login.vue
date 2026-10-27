@@ -12,6 +12,7 @@ const auth = useAuthStore()
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const showDemoAccount = import.meta.env.DEV
 const form = reactive({
   username: '',
   password: '',
@@ -125,7 +126,7 @@ async function submit() {
 
         <!-- 快捷操作与环境提示 -->
         <div class="pg-login-footer">
-          <button class="pg-quick-fill-btn" type="button" @click="fillDemoAccount">
+          <button v-if="showDemoAccount" class="pg-quick-fill-btn" type="button" @click="fillDemoAccount">
             <PgIcon name="zap" :size="13" />
             <span>快捷填入课设演示账号</span>
           </button>

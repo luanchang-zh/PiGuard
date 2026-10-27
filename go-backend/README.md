@@ -1,5 +1,7 @@
 # Go 监控与控制后端
 
+云端实例入口为 [http://106.54.188.216/](http://106.54.188.216/)，通过 Nginx 同时提供前端、API、WebSocket 和 MQTT WebSocket。服务器使用独立随机密码、systemd 开机自启和持久数据目录，具体操作见 [云服务器部署](../docs/deployment/cloud-server.md)。下文 `.env.demo` 仅用于本地课设演示。
+
 在 `go-backend` 目录运行。已实现 telemetry/status MQTT 接入、最新状态、历史查询、动作/拍照命令与 Ack、告警与图片关联、配置同步、JPEG 上传/读取、WebSocket、认证接入和部署。无硬件软件验收使用真实 SQLite、HTTP、WS、认证 Mosquitto 与软件设备；真实传感器、GPIO 和相机留待硬件验收。
 
 ## 课设演示启动

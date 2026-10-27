@@ -1,0 +1,22 @@
+[Unit]
+Description=PiGuard authenticated MQTT broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mosquitto
+Group=mosquitto
+ExecStart=/usr/sbin/mosquitto -c /etc/piguard/mosquitto.conf
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/piguard-mqtt
+
+[Install]
+WantedBy=multi-user.target

@@ -143,7 +143,14 @@ def _mqtt(value: Any) -> MqttConfig:
         "username",
         "password",
     }
-    data = _section(value, keys, "mqtt")
+    if not isinstance(value, dict):
+        raise ConfigError("mqtt must be a mapping")
+    data = value
+    _unknown(data, keys | {"transport", "websocket_path"}, "mqtt")
+    _require(data, keys, "mqtt")
+    websocket_path = _text(data.get("websocket_path", "/mqtt"), "mqtt.websocket_path")
+    if not websocket_path.startswith("/") or any(c.isspace() or c in "?#" for c in websocket_path):
+        raise ConfigError("mqtt.websocket_path must be an absolute URL path without whitespace, query or fragment")
     return MqttConfig(
         host=_text(data["host"], "mqtt.host"),
         port=_int(data["port"], "mqtt.port", minimum=1, maximum=65535),
@@ -157,6 +164,8 @@ def _mqtt(value: Any) -> MqttConfig:
         status_heartbeat_s=_int(data["status_heartbeat_s"], "mqtt.status_heartbeat_s", minimum=1),
         username=_optional_text(data["username"], "mqtt.username"),
         password=_optional_text(data["password"], "mqtt.password"),
+        transport=_choice(data.get("transport", "tcp"), "mqtt.transport", {"tcp", "websockets"}),
+        websocket_path=websocket_path,
     )
 
 

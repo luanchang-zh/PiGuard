@@ -7,3 +7,7 @@
 # Local browser verification artifacts and session state.
 /.playwright-cli/
 /output/playwright/
+
+# Cloud deployment credentials and generated device profiles.
+/deploy/cloud/.secrets/
+/edge/config/cloud/

@@ -4,6 +4,8 @@
 
 仓库包含 Python 边缘端 `edge/`、Go 平台 `go-backend/` 和 Vue 前端 `frontend/`。树莓派 CSI 摄像头损坏后，演示配置改用 USB 连接的 Ubuntu 24.04 电脑摄像头。
 
+前后端现已部署到腾讯云 Ubuntu 服务器：[打开 PiGuard](http://106.54.188.216/)。前端、API、实时 WebSocket 和设备 MQTT 共用 80 端口；部署更新、登录凭据位置及树莓派接入见 [云服务器部署](docs/deployment/cloud-server.md)。本地演示启动方式继续保留。
+
 - [树莓派端开发规划](docs/planning/PLAN.md)：总规范。后端能力基线、模块职责、阶段门槛与验收标准。
 - [开发电脑上的实施计划](docs/planning/implementation/pc-edge-software.md)：当前可执行的 P1—P5，以及 P1 的实施步骤。
 - [测试报告](docs/verification/README.md)：按单元、契约、联调、硬件分层。P1 到 P4 的软件结果已记录。

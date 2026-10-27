@@ -71,7 +71,9 @@ class PahoMqtt:
 
     def __init__(self, config: EdgeConfig, client: object | None = None) -> None:
         self._config = config
-        self._client = client if client is not None else _paho_client(config.mqtt.client_id)
+        self._client = client if client is not None else _paho_client(config.mqtt.client_id, config.mqtt.transport)
+        if config.mqtt.transport == "websockets":
+            self._client.ws_set_options(path=config.mqtt.websocket_path)
         self._events: list[str] = []
         self._inbox: list[MqttMessage] = []
         self._lock = threading.Lock()
@@ -138,7 +140,7 @@ class PahoMqtt:
             ))
 
 
-def _paho_client(client_id: str) -> object:
+def _paho_client(client_id: str, transport: str = "tcp") -> object:
     import paho.mqtt.client as mqtt
 
-    return mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    return mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id, transport=transport)
